@@ -1,0 +1,18 @@
+# 构建产物
+*.apk
+*.ipa
+android/.gradle/
+android/build/
+android/app/build/
+android/.kotlin/
+android/local.properties
+ios/YiPaiCore/.build/
+ios/build/
+ios/YiPai.xcodeproj/
+ios/Info.plist
+
+# 大文件：由 scripts/fetch_models.sh 下载
+android/app/libs/*.aar
+android/app/src/main/assets/models/
+ios/Models/*
+!ios/Models/.gitkeep

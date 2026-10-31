@@ -1,0 +1,53 @@
+# 在 GitHub 云端 Mac 上编译 iOS 安装包（未签名 IPA），由 SideStore 用你的免费 Apple ID 签名安装
+name: iOS 安装包
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 剪辑算法单元测试
+        run: swift test --package-path ios/YiPaiCore
+
+      - name: 下载识别模型
+        run: bash ios/scripts/fetch_models.sh
+
+      - name: 生成 Xcode 工程
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+
+      - name: 编译
+        run: |
+          cd ios
+          xcodebuild -project YiPai.xcodeproj -scheme YiPai -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tail -50
+          test -d build/Build/Products/Release-iphoneos/YiPai.app
+
+      - name: 打包 IPA
+        run: |
+          mkdir Payload
+          cp -R ios/build/Build/Products/Release-iphoneos/YiPai.app Payload/
+          zip -qry YiPai.ipa Payload
+          ls -la YiPai.ipa
+
+      - name: 发布到 Releases（手机上可直接下载）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "ios-${{ github.run_number }}" YiPai.ipa \
+            --title "一拍成片 iOS #${{ github.run_number }}" \
+            --notes "用 SideStore 安装：下载 YiPai.ipa → 分享到 SideStore，或在 SideStore 里点 + 选择该文件。"
