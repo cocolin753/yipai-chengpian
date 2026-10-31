@@ -36,7 +36,7 @@ targets:
         NSMicrophoneUsageDescription: 录制声音并生成字幕需要使用麦克风
         NSPhotoLibraryAddUsageDescription: 把成品视频保存到相册
         NSPhotoLibraryUsageDescription: 从相册选择标题图片
-        LSApplicationQueriesSchemes: [weixin, shortcuts]
+        LSApplicationQueriesSchemes: [weixin]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yipai.app

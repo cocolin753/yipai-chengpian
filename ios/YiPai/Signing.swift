@@ -2,12 +2,9 @@ import SwiftUI
 import UIKit
 import UserNotifications
 
-/// 签名有效期：免费 Apple ID 签名的 App 7 天后失效，需要用 SideStore 续签。
+/// 签名有效期：免费 Apple ID 签名的 App 7 天后失效，需要连接电脑用 iloader 重新安装。
 /// 有效期从 App 包内的 embedded.mobileprovision 里读取。
 enum Signing {
-    /// 一键续期用的快捷指令名称（安装说明见文档）
-    static let shortcutName = "一拍成片续期"
-
     static let expirationDate: Date? = {
         guard let url = Bundle.main.url(forResource: "embedded", withExtension: "mobileprovision"),
               let data = try? Data(contentsOf: url),
@@ -23,14 +20,6 @@ enum Signing {
         return Calendar.current.dateComponents([.day], from: Date(), to: date).day
     }
 
-    /// 运行快捷指令：连接 VPN → SideStore 刷新全部 App
-    static func renew() {
-        let name = shortcutName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? shortcutName
-        if let url = URL(string: "shortcuts://run-shortcut?name=\(name)") {
-            UIApplication.shared.open(url)
-        }
-    }
-
     /// 到期前一天提醒续期
     static func scheduleReminder() {
         guard let expiry = expirationDate else { return }
@@ -42,7 +31,7 @@ enum Signing {
             guard fire > Date() else { return }
             let content = UNMutableNotificationContent()
             content.title = "一拍成片明天到期"
-            content.body = "打开 App 点「一键续期」，或运行快捷指令「\(shortcutName)」"
+            content.body = "请连接电脑，用 iloader 重新安装一次，拍摄的视频不受影响"
             content.sound = .default
             let comps = Calendar.current.dateComponents([.year, .month, .day, .hour, .minute], from: fire)
             let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: false)
@@ -80,19 +69,14 @@ struct RenewView: View {
                     if let date = Signing.expirationDate {
                         LabeledContent("到期时间", value: date.formatted(date: .abbreviated, time: .shortened))
                     }
-                    Button {
-                        Signing.renew()
-                    } label: {
-                        Label("一键续期", systemImage: "arrow.clockwise.circle.fill").font(.headline)
-                    }
                 } footer: {
-                    Text("会运行快捷指令「\(Signing.shortcutName)」：连接 LocalDevVPN 后让 SideStore 刷新全部 App，有效期重新变为 7 天。")
+                    Text("到期前一天会发通知提醒。过期后 App 打不开，重新安装后即可恢复。")
                 }
-                Section("第一次使用前（只需设置一次）") {
-                    Text("1. 在快捷指令 App 新建快捷指令，命名为「\(Signing.shortcutName)」")
-                    Text("2. 添加操作「设置 VPN」→ 选 LocalDevVPN → 连接")
-                    Text("3. 添加 SideStore 的操作「Refresh All Apps」（刷新所有 App）")
-                    Text("4. 建议在「自动化」里新建每天定时运行这个快捷指令，并关闭「运行前询问」，这样完全不用管")
+                Section("续期步骤（每 7 天一次）") {
+                    Text("1. 用数据线把手机连到电脑")
+                    Text("2. 电脑上打开 iloader，确认已登录同一个 Apple ID")
+                    Text("3. 选择「导入 IPA」，选最新的 YiPai.ipa，点安装")
+                    Text("4. 装完有效期重新变为 7 天，设置和标题图片都会保留")
                 }
             }
             .navigationTitle("签名续期")
