@@ -13,6 +13,7 @@ import com.yipai.app.Pipeline
 import com.yipai.app.PipelineResult
 import com.yipai.app.SettingsStore
 import com.yipai.app.core.EditSettings
+import com.yipai.app.llm.LlmConfig
 import com.yipai.app.render.TitleSpec
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +36,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var titleText by mutableStateOf(store.title)
         private set
+    var subTitleText by mutableStateOf(store.subTitle)
+        private set
+    var llm by mutableStateOf(store.loadLlm())
+        private set
     var useTitleImage by mutableStateOf(store.useTitleImage)
         private set
     /** 每次换图片 +1，让预览重新加载 */
@@ -49,6 +54,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun updateTitle(text: String) {
         titleText = text
         store.title = text
+    }
+
+    fun updateSubTitle(text: String) {
+        subTitleText = text
+        store.subTitle = text
+    }
+
+    fun updateLlm(c: LlmConfig) {
+        llm = c
+        store.saveLlm(c)
+    }
+
+    /** 发布时复制到剪贴板的全部文字：标题 + 概要 + 关键字（带 # 号） */
+    fun publishText(result: PipelineResult): String = buildString {
+        val head = listOf(titleText, subTitleText).filter { it.isNotBlank() }.joinToString(" ")
+        if (head.isNotBlank()) append(head)
+        if (result.summary.isNotBlank()) { if (isNotEmpty()) append('\n'); append(result.summary) }
+        if (result.keywords.isNotEmpty()) {
+            if (isNotEmpty()) append('\n')
+            append(result.keywords.joinToString(" ") { "#$it" })
+        }
     }
 
     fun setTitleImage(uri: Uri) {
@@ -96,12 +122,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun process(input: File) {
-        val title = TitleSpec(titleText, if (useTitleImage) titleImageFile.path else null)
+        val title = TitleSpec(titleText, subTitleText, if (useTitleImage) titleImageFile.path else null)
         val s = settings
+        val llmConfig = llm
         screen = Screen.Processing("准备中", 0f)
         viewModelScope.launch {
             screen = try {
-                val result = Pipeline(getApplication()).run(input, title, s) { stage, p ->
+                val result = Pipeline(getApplication()).run(input, title, s, llmConfig) { stage, p ->
                     screen = Screen.Processing(stage, p)
                 }
                 Screen.Done(result)

@@ -19,6 +19,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -30,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
@@ -61,7 +63,7 @@ fun ProcessingScreen(state: Screen.Processing) {
 }
 
 @Composable
-fun DoneScreen(state: Screen.Done, title: String, onBack: () -> Unit) {
+fun DoneScreen(state: Screen.Done, vm: AppViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
     val result = state.result
     val player = remember {
@@ -83,6 +85,9 @@ fun DoneScreen(state: Screen.Done, title: String, onBack: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         val plan = result.plan
         Text("已保存到相册：Movies/一拍成片")
+        if (result.llmNote.isNotBlank()) {
+            Text(result.llmNote, color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+        }
         Text(
             "时长 %.0f 秒 → %.0f 秒　语速 %.2fx　去语气词 %d 处　去重复 %d 处".format(
                 result.inputDuration, plan.outputDuration, plan.speed, plan.removedFillers, plan.removedRepeats,
@@ -91,12 +96,24 @@ fun DoneScreen(state: Screen.Done, title: String, onBack: () -> Unit) {
             style = MaterialTheme.typography.bodySmall,
         )
         Spacer(Modifier.height(12.dp))
+        val publishText = remember(result) { vm.publishText(result) }
+        if (publishText.isNotBlank()) {
+            Text(
+                publishText,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 4,
+                modifier = Modifier.fillMaxWidth().background(Color(0x14000000)).padding(8.dp),
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+        Text("点下面的平台会自动复制上面的文案，到发布页直接粘贴", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(4.dp))
         Text("发布到", style = MaterialTheme.typography.titleSmall)
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Platform.entries.forEach { platform ->
                 OutlinedButton(
-                    onClick = { Publisher.publish(context, platform, result.uri, title) },
+                    onClick = { Publisher.publish(context, platform, result.uri, publishText) },
                     modifier = Modifier.weight(1f),
                 ) { Text(platform.label) }
             }
@@ -151,6 +168,30 @@ fun SettingsScreen(vm: AppViewModel) {
             "停顿剪完后保留 %.2f 秒".format(s.keepGap),
             s.keepGap.toFloat(), 0.05f..0.4f, steps = 6,
         ) { vm.updateSettings(s.copy(keepGap = it.toDouble())) }
+
+        Spacer(Modifier.height(8.dp))
+        Text("大模型文字优化（DeepSeek）", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "识别后自动纠正口音造成的错字（字数不变），并生成内容概要和关键字，发布时自动复制。不填 Key 则不启用。",
+            color = Color.Gray, style = MaterialTheme.typography.bodySmall,
+        )
+        val llm = vm.llm
+        OutlinedTextField(
+            llm.apiKey, { vm.updateLlm(llm.copy(apiKey = it)) },
+            label = { Text("API Key") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+        OutlinedTextField(
+            llm.baseUrl, { vm.updateLlm(llm.copy(baseUrl = it)) },
+            label = { Text("接口地址") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+        OutlinedTextField(
+            llm.model, { vm.updateLlm(llm.copy(model = it)) },
+            label = { Text("模型") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
 
         Spacer(Modifier.height(24.dp))
         Button(onClick = vm::backToRecord, modifier = Modifier.fillMaxWidth()) { Text("完成") }

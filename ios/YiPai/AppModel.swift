@@ -14,6 +14,8 @@ enum Screen {
 final class AppModel: ObservableObject {
     @Published var screen: Screen = .record
     @Published var titleText: String { didSet { defaults.set(titleText, forKey: "title") } }
+    @Published var subTitleText: String { didSet { defaults.set(subTitleText, forKey: "subTitle") } }
+    @Published var llm: LlmConfig { didSet { saveLlm() } }
     @Published private(set) var useTitleImage: Bool
     /// 每次换图片 +1，让预览刷新
     @Published private(set) var titleImageVersion = 0
@@ -30,6 +32,12 @@ final class AppModel: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
         titleText = defaults.string(forKey: "title") ?? ""
+        subTitleText = defaults.string(forKey: "subTitle") ?? ""
+        if let data = defaults.data(forKey: "llm"), let c = try? JSONDecoder().decode(LlmConfig.self, from: data) {
+            llm = c
+        } else {
+            llm = LlmConfig()
+        }
         useTitleImage = defaults.bool(forKey: "useTitleImage") &&
             FileManager.default.fileExists(atPath: Self.titleImageFile.path)
         if let data = defaults.data(forKey: "settings"),
@@ -42,6 +50,20 @@ final class AppModel: ObservableObject {
 
     private func saveSettings() {
         if let data = try? JSONEncoder().encode(settings) { defaults.set(data, forKey: "settings") }
+    }
+
+    private func saveLlm() {
+        if let data = try? JSONEncoder().encode(llm) { defaults.set(data, forKey: "llm") }
+    }
+
+    /// 发布时复制到剪贴板的全部文字：标题 + 概要 + 关键字（带 # 号）
+    func publishText(_ result: PipelineResult) -> String {
+        var lines: [String] = []
+        let head = [titleText, subTitleText].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+        if !head.isEmpty { lines.append(head) }
+        if !result.summary.isEmpty { lines.append(result.summary) }
+        if !result.keywords.isEmpty { lines.append(result.keywords.map { "#" + $0 }.joined(separator: " ")) }
+        return lines.joined(separator: "\n")
     }
 
     func setTitleImage(data: Data) {
@@ -65,12 +87,13 @@ final class AppModel: ObservableObject {
     }
 
     var titleSpec: TitleSpec {
-        TitleSpec(text: titleText, imageURL: useTitleImage ? titleImageURL : nil)
+        TitleSpec(text: titleText, subText: subTitleText, imageURL: useTitleImage ? titleImageURL : nil)
     }
 
     func process(_ input: URL) {
         let title = titleSpec
         let s = settings
+        let llmConfig = llm
         screen = .processing(stage: "准备中", progress: 0)
         UIApplication.shared.isIdleTimerDisabled = true
         // 切到后台时多争取一点时间
@@ -81,7 +104,7 @@ final class AppModel: ObservableObject {
                 UIApplication.shared.endBackgroundTask(bgTask)
             }
             do {
-                let result = try await Pipeline.run(input: input, title: title, settings: s) { stage, p in
+                let result = try await Pipeline.run(input: input, title: title, settings: s, llm: llmConfig) { stage, p in
                     Task { @MainActor in
                         if case .processing = self.screen { self.screen = .processing(stage: stage, progress: p) }
                     }

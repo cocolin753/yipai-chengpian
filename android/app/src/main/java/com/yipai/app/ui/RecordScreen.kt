@@ -56,12 +56,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -178,13 +184,22 @@ fun RecordScreen(vm: AppViewModel) {
                         TextButton(onClick = { pickImage.launch("image/png") }) { Text("换图") }
                         TextButton(onClick = vm::clearTitleImage) { Text("改用文字") }
                     } else {
-                        OutlinedTextField(
-                            value = vm.titleText,
-                            onValueChange = vm::updateTitle,
-                            placeholder = { Text("输入视频标题") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                        )
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            OutlinedTextField(
+                                value = vm.titleText,
+                                onValueChange = vm::updateTitle,
+                                placeholder = { Text("主标题（大字黄色）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            OutlinedTextField(
+                                value = vm.subTitleText,
+                                onValueChange = vm::updateSubTitle,
+                                placeholder = { Text("副标题（白字，可不填）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                         TextButton(onClick = { pickImage.launch("image/png") }) { Text("用图片") }
                     }
                 }
@@ -214,19 +229,35 @@ private fun TitlePreview(vm: AppViewModel, modifier: Modifier) {
         if (bitmap != null) {
             Image(bitmap, contentDescription = "标题图片", contentScale = ContentScale.Fit, modifier = modifier)
         }
-    } else if (vm.titleText.isNotBlank()) {
+    } else if (vm.titleText.isNotBlank() || vm.subTitleText.isNotBlank()) {
+        val main = vm.titleText.trim()
+        val sub = vm.subTitleText.trim()
+        // 字号：一个汉字约等于一个字号宽，按 9:16 取景框约 300dp 宽估算，与成品的“放得下就最大”一致
+        val mainSize = minOf(44f, 310f / maxOf(main.length, 1))
+        val subSize = minOf(mainSize * 0.62f, 310f / maxOf(sub.length, 1))
+        Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+            if (main.isNotEmpty()) {
+                OutlinedTitleText(
+                    main, mainSize.sp,
+                    Brush.verticalGradient(listOf(Color(0xFFFFF46E), Color(0xFFFFCD14), Color(0xFFFF9600))),
+                )
+            }
+            if (sub.isNotEmpty()) OutlinedTitleText(sub, subSize.sp, SolidColor(Color.White))
+        }
+    }
+}
+
+/** 黑色粗描边 + 填充（渐变或纯色），与成品里的标题样式一致 */
+@Composable
+private fun OutlinedTitleText(text: String, size: TextUnit, fill: Brush) {
+    val strokePx = with(LocalDensity.current) { size.toPx() * 0.26f }
+    val base = TextStyle(fontSize = size, fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic)
+    Box {
         Text(
-            vm.titleText,
-            color = Color.White,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            modifier = modifier
-                .background(Color(0x73000000), RoundedCornerShape(6.dp))
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+            text, maxLines = 1, softWrap = false,
+            style = base.copy(color = Color.Black, drawStyle = Stroke(width = strokePx, join = StrokeJoin.Round)),
         )
+        Text(text, maxLines = 1, softWrap = false, style = base.copy(brush = fill))
     }
 }
 

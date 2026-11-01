@@ -13,11 +13,11 @@ import android.widget.Toast
  * 标题会复制到剪贴板，在发布页直接粘贴即可。
  */
 enum class Platform(val label: String, val packageName: String, val sendDirectly: Boolean, val hint: String) {
-    DOUYIN("抖音", "com.ss.android.ugc.aweme", true, "已打开抖音，标题已复制，可直接粘贴"),
-    XIAOHONGSHU("小红书", "com.xingin.xhs", true, "已打开小红书，标题已复制，可直接粘贴"),
+    DOUYIN("抖音", "com.ss.android.ugc.aweme", true, "已打开抖音，文案已复制，可直接粘贴"),
+    XIAOHONGSHU("小红书", "com.xingin.xhs", true, "已打开小红书，文案已复制，可直接粘贴"),
     CHANNELS(
         "视频号", "com.tencent.mm", false,
-        "视频已在相册。在微信：发现 → 视频号 → 右上角发表 → 从相册选择。标题已复制",
+        "视频已在相册。在微信：发现 → 视频号 → 右上角发表 → 从相册选择。文案已复制",
     ),
 }
 
@@ -25,7 +25,7 @@ object Publisher {
     fun publish(context: Context, platform: Platform, video: Uri, title: String) {
         if (title.isNotBlank()) {
             val clipboard = context.getSystemService(ClipboardManager::class.java)
-            clipboard.setPrimaryClip(ClipData.newPlainText("标题", title))
+            clipboard.setPrimaryClip(ClipData.newPlainText("发布文案", title))
         }
         val launched = (platform.sendDirectly && sendTo(context, platform.packageName, video, title)) ||
             openApp(context, platform.packageName)

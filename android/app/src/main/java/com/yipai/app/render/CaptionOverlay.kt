@@ -8,6 +8,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.LinearGradient
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.text.Layout
 import android.text.StaticLayout
@@ -16,8 +18,8 @@ import android.text.TextUtils
 import androidx.media3.effect.BitmapOverlay
 import com.yipai.app.core.SubtitleLine
 
-/** 标题：文字或 PNG 图片（图片优先）。 */
-data class TitleSpec(val text: String, val imagePath: String?)
+/** 标题：主标题 + 副标题文字，或 PNG 图片（图片优先）。 */
+data class TitleSpec(val text: String, val subText: String, val imagePath: String?)
 
 /**
  * 画面叠加层：标题全程显示 + 当前字幕。
@@ -69,12 +71,12 @@ class CaptionOverlay(
 class CaptionPainter(private val width: Int, private val height: Int, private val title: TitleSpec) {
     private val titleImage: Bitmap? = title.imagePath?.let { BitmapFactory.decodeFile(it) }
 
-    private val titleFill = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        textSize = width * 0.068f
-        typeface = Typeface.DEFAULT_BOLD
+    /** 标题文字的画笔：每次按字号重新设置 */
+    private val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        isFakeBoldText = true
+        textSkewX = -0.1f
+        strokeJoin = Paint.Join.ROUND
     }
-    private val titleBg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(115, 0, 0, 0) }
 
     private val subFill = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
@@ -110,21 +112,62 @@ class CaptionPainter(private val width: Int, private val height: Int, private va
             canvas.drawBitmap(image, null, RectF(left, top, left + w, top + h), Paint(Paint.FILTER_BITMAP_FLAG))
             return
         }
-        if (title.text.isBlank()) return
-        val maxW = (width * 0.84f).toInt()
-        val layout = layout(title.text, titleFill, maxW)
-        val textW = (0 until layout.lineCount).maxOf { layout.getLineWidth(it) }
-        val padX = titleFill.textSize * 0.5f
-        val padY = titleFill.textSize * 0.3f
-        val left = (width - textW) / 2
-        canvas.drawRoundRect(
-            RectF(left - padX, top - padY, left + textW + padX, top + layout.height + padY),
-            titleFill.textSize * 0.3f, titleFill.textSize * 0.3f, titleBg,
-        )
-        canvas.save()
-        canvas.translate((width - maxW) / 2f, top)
-        layout.draw(canvas)
-        canvas.restore()
+        val main = title.text.trim()
+        val sub = title.subText.trim()
+        var y = top
+        if (main.isNotEmpty()) {
+            val size = fitSize(main, width * MAIN_SIZE, width * 0.9f)
+            y = drawStyledLine(canvas, main, size, y, yellow = true)
+        }
+        if (sub.isNotEmpty()) {
+            val mainSize = if (main.isNotEmpty()) fitSize(main, width * MAIN_SIZE, width * 0.9f) else width * MAIN_SIZE
+            val size = fitSize(sub, mainSize * 0.62f, width * 0.9f)
+            drawStyledLine(canvas, sub, size, y + (if (main.isNotEmpty()) size * 0.08f else 0f), yellow = false)
+        }
+    }
+
+    /** 字号：不超过 [maxSize]，且一行放得下 [maxWidth] */
+    private fun fitSize(text: String, maxSize: Float, maxWidth: Float): Float {
+        titlePaint.textSize = maxSize
+        val w = titlePaint.measureText(text)
+        return if (w > maxWidth) maxSize * maxWidth / w else maxSize
+    }
+
+    /**
+     * 参照 title.png：主标题为黄色渐变粗体，副标题为白色粗体，都带黑色粗描边和投影。
+     * 返回这一行下沿的 y 坐标。
+     */
+    private fun drawStyledLine(canvas: Canvas, text: String, size: Float, top: Float, yellow: Boolean): Float {
+        val p = titlePaint
+        p.textSize = size
+        val fm = p.fontMetrics
+        val baseline = top - fm.ascent
+        val x = (width - p.measureText(text)) / 2f
+        val outline = size * 0.13f
+
+        // 黑色描边 + 投影
+        p.shader = null
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = outline * 2
+        p.color = Color.BLACK
+        p.setShadowLayer(size * 0.1f, 0f, size * 0.07f, Color.argb(200, 0, 0, 0))
+        canvas.drawText(text, x, baseline, p)
+        p.clearShadowLayer()
+
+        // 填充
+        p.style = Paint.Style.FILL
+        if (yellow) {
+            p.shader = LinearGradient(
+                0f, baseline + fm.ascent, 0f, baseline + fm.descent,
+                intArrayOf(Color.rgb(255, 244, 110), Color.rgb(255, 205, 20), Color.rgb(255, 150, 0)),
+                floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP,
+            )
+        } else {
+            p.color = Color.WHITE
+        }
+        canvas.drawText(text, x, baseline, p)
+        p.shader = null
+        return top + (fm.descent - fm.ascent) + outline
     }
 
     private fun drawSubtitle(canvas: Canvas, text: String) {
@@ -149,5 +192,7 @@ class CaptionPainter(private val width: Int, private val height: Int, private va
         /** 标题顶部位置（占画面高度比例），拍摄预览界面也用这个值 */
         const val TITLE_TOP = 0.08f
         const val SUBTITLE_CENTER = 0.8f
+        /** 主标题字号（占画面宽度比例） */
+        const val MAIN_SIZE = 0.15f
     }
 }

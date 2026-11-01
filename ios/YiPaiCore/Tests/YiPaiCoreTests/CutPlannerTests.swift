@@ -111,3 +111,23 @@ final class CutPlannerTests: XCTestCase {
         XCTAssertEqual(tl.map(6), 1, accuracy: 1e-9)
     }
 }
+
+final class TranscriptAlignerTests: XCTestCase {
+    private func utt(_ chars: [String]) -> Utterance {
+        Utterance(start: 0, end: Double(chars.count), tokens: chars.enumerated().map { i, c in
+            Token(text: c, start: Double(i), end: Double(i) + 1, punctAfter: i == chars.count - 1 ? "。" : "")
+        })
+    }
+
+    func testSameLengthReplacesCharsAndKeepsTiming() {
+        let u = utt(["我", "们", "今", "天", "来", "谈", "谈"])
+        let r = TranscriptAligner.apply(u, refined: "我们今天来聊聊。")
+        XCTAssertEqual(r?.tokens.map(\.text).joined(), "我们今天来聊聊")
+        XCTAssertEqual(r?.tokens.map(\.start), u.tokens.map(\.start))
+        XCTAssertEqual(r?.tokens.last?.punctAfter, "。")
+    }
+
+    func testLengthMismatchRejected() {
+        XCTAssertNil(TranscriptAligner.apply(utt(["我", "们", "好"]), refined: "大家好啊"))
+    }
+}

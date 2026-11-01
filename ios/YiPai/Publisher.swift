@@ -3,7 +3,7 @@ import UIKit
 
 /// 发布到各平台。官方分享 SDK 都要注册开发者应用，自用 App 申请不了：
 /// 抖音、小红书用系统分享面板（在面板里点对应 App 图标）；视频号直接打开微信并提示路径。
-/// 标题会复制到剪贴板，在发布页直接粘贴。
+/// 文案（标题 + 概要 + 关键字）会复制到剪贴板，在发布页直接粘贴。
 enum Platform: String, CaseIterable, Identifiable {
     case douyin = "抖音"
     case xiaohongshu = "小红书"
@@ -21,12 +21,12 @@ enum Publisher {
         switch platform {
         case .douyin, .xiaohongshu:
             presentShareSheet(video)
-            toast("在分享面板里点「\(platform.rawValue)」，标题已复制")
+            toast("在分享面板里点「\(platform.rawValue)」，文案已复制")
         case .channels:
             UIApplication.shared.open(URL(string: "weixin://")!) { ok in
                 if !ok { toast("没有安装微信") }
             }
-            toast("视频已在相册。微信：发现 → 视频号 → 右上角发表 → 从相册选择。标题已复制")
+            toast("视频已在相册。微信：发现 → 视频号 → 右上角发表 → 从相册选择。文案已复制")
         }
     }
 

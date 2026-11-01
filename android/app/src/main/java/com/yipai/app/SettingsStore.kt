@@ -2,6 +2,7 @@ package com.yipai.app
 
 import android.content.Context
 import com.yipai.app.core.EditSettings
+import com.yipai.app.llm.LlmConfig
 import java.io.File
 
 /** 设置与标题的本地保存 */
@@ -14,6 +15,23 @@ class SettingsStore(private val context: Context) {
     var title: String
         get() = prefs.getString("title", "") ?: ""
         set(v) = prefs.edit().putString("title", v).apply()
+
+    var subTitle: String
+        get() = prefs.getString("subTitle", "") ?: ""
+        set(v) = prefs.edit().putString("subTitle", v).apply()
+
+    fun loadLlm(): LlmConfig {
+        val d = LlmConfig()
+        return LlmConfig(
+            apiKey = prefs.getString("llmKey", "") ?: "",
+            baseUrl = prefs.getString("llmBase", d.baseUrl) ?: d.baseUrl,
+            model = prefs.getString("llmModel", d.model) ?: d.model,
+        )
+    }
+
+    fun saveLlm(c: LlmConfig) {
+        prefs.edit().putString("llmKey", c.apiKey).putString("llmBase", c.baseUrl).putString("llmModel", c.model).apply()
+    }
 
     var useTitleImage: Boolean
         get() = prefs.getBoolean("useTitleImage", false) && titleImageFile.exists()

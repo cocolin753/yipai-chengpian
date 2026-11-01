@@ -2,9 +2,10 @@ import AVFoundation
 import UIKit
 import YiPaiCore
 
-/// 标题：文字或 PNG 图片（图片优先）
+/// 标题：主标题 + 副标题文字，或 PNG 图片（图片优先）
 struct TitleSpec {
     var text: String
+    var subText: String
     var imageURL: URL?
 }
 
@@ -131,40 +132,13 @@ enum CaptionRenderer {
             layer.frame = CGRect(x: (size.width - w) / 2, y: size.height - top - h, width: w, height: h)
             return layer
         }
-        let text = title.text.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return nil }
-
-        // 文字标题先画成图片（半透明圆角底 + 白字，最多两行）
-        let fontSize = size.width * 0.068
-        let font = UIFont.boldSystemFont(ofSize: fontSize)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        paragraph.lineBreakMode = .byTruncatingTail
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: UIColor.white, .paragraphStyle: paragraph]
-        let maxTextW = size.width * 0.84
-        let maxTextH = font.lineHeight * 2.2
-        var textRect = (text as NSString).boundingRect(
-            with: CGSize(width: maxTextW, height: maxTextH),
-            options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attrs, context: nil)
-        textRect.size = CGSize(width: ceil(min(textRect.width, maxTextW)), height: ceil(min(textRect.height, maxTextH)))
-        let padX = fontSize * 0.5
-        let padY = fontSize * 0.3
-        let boxSize = CGSize(width: textRect.width + padX * 2, height: textRect.height + padY * 2)
-
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        let image = UIGraphicsImageRenderer(size: boxSize, format: format).image { _ in
-            UIColor(white: 0, alpha: 0.45).setFill()
-            UIBezierPath(roundedRect: CGRect(origin: .zero, size: boxSize), cornerRadius: fontSize * 0.3).fill()
-            (text as NSString).draw(
-                with: CGRect(x: padX, y: padY, width: textRect.width, height: textRect.height),
-                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine], attributes: attrs, context: nil)
-        }
+        guard let art = TitleArt.render(main: title.text, sub: title.subText, canvasWidth: size.width),
+              let cg = art.cgImage else { return nil }
         let layer = CALayer()
-        layer.contents = image.cgImage
+        layer.contents = cg
         layer.frame = CGRect(
-            x: (size.width - boxSize.width) / 2, y: size.height - top - boxSize.height + padY,
-            width: boxSize.width, height: boxSize.height)
+            x: (size.width - art.size.width) / 2, y: size.height - top - art.size.height,
+            width: art.size.width, height: art.size.height)
         return layer
     }
 

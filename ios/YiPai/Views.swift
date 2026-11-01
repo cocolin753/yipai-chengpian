@@ -66,7 +66,7 @@ struct RecordView: View {
             GeometryReader { geo in
                 ZStack(alignment: .top) {
                     CameraPreview(session: camera.session)
-                    TitlePreview()
+                    TitlePreview(canvasWidth: geo.size.width)
                         .frame(maxWidth: geo.size.width * 0.9, maxHeight: geo.size.height * CaptionLayout.titleMaxHeight)
                         .offset(y: geo.size.height * CaptionLayout.titleTop)
                     HStack {
@@ -140,8 +140,12 @@ struct RecordView: View {
                         Text("标题：PNG 图片").frame(maxWidth: .infinity, alignment: .leading)
                         Button("改用文字") { model.clearTitleImage() }
                     } else {
-                        TextField("输入视频标题", text: $model.titleText)
-                            .textFieldStyle(.roundedBorder)
+                        VStack(spacing: 6) {
+                            TextField("主标题（大字黄色）", text: $model.titleText)
+                                .textFieldStyle(.roundedBorder)
+                            TextField("副标题（白字，可不填）", text: $model.subTitleText)
+                                .textFieldStyle(.roundedBorder)
+                        }
                     }
                     PhotosPicker(selection: $photoItem, matching: .images) { Text("相册图") }
                     Button("文件图") { showFileImporter = true }
@@ -172,6 +176,8 @@ struct RecordView: View {
 
 struct TitlePreview: View {
     @EnvironmentObject private var model: AppModel
+    /// 取景框宽度（点）；艺术字按这个宽度渲染，与成品比例一致
+    let canvasWidth: CGFloat
 
     var body: some View {
         if model.useTitleImage {
@@ -179,14 +185,8 @@ struct TitlePreview: View {
             if let image = UIImage(contentsOfFile: model.titleImageURL.path) {
                 Image(uiImage: image).resizable().scaledToFit().id(model.titleImageVersion)
             }
-        } else if !model.titleText.trimmingCharacters(in: .whitespaces).isEmpty {
-            Text(model.titleText)
-                .font(.title3.bold())
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 6))
-                .foregroundStyle(.white)
+        } else if let art = TitleArt.render(main: model.titleText, sub: model.subTitleText, canvasWidth: canvasWidth) {
+            Image(uiImage: art)
         }
     }
 }
@@ -239,11 +239,25 @@ struct DoneView: View {
                         result.inputDuration, plan.outputDuration, plan.speed, plan.removedFillers, plan.removedRepeats))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if !result.llmNote.isEmpty {
+                Text(result.llmNote).font(.caption).foregroundStyle(.secondary)
+            }
+            let publishText = model.publishText(result)
+            if !publishText.isEmpty {
+                Text(publishText)
+                    .font(.footnote)
+                    .lineLimit(4)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+            }
+            Text("点下面的平台会自动复制上面的文案，到发布页直接粘贴")
+                .font(.caption).foregroundStyle(.secondary)
             Text("发布到").font(.subheadline.bold())
             HStack(spacing: 8) {
                 ForEach(Platform.allCases) { platform in
                     Button(platform.rawValue) {
-                        Publisher.publish(platform, video: result.fileURL, title: model.titleText) { model.toast = $0 }
+                        Publisher.publish(platform, video: result.fileURL, title: publishText) { model.toast = $0 }
                     }
                     .buttonStyle(.bordered)
                     .frame(maxWidth: .infinity)
@@ -303,6 +317,18 @@ struct SettingsView: View {
                               value: $model.settings.pauseThreshold, range: 0.25...1.0, step: 0.05)
                     sliderRow(String(format: "停顿剪完后保留 %.2f 秒", model.settings.keepGap),
                               value: $model.settings.keepGap, range: 0.05...0.4, step: 0.05)
+                }
+                Section {
+                    SecureField("API Key", text: $model.llm.apiKey)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("接口地址", text: $model.llm.baseUrl)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("模型", text: $model.llm.model)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                } header: {
+                    Text("大模型文字优化（DeepSeek）")
+                } footer: {
+                    Text("识别后自动纠正口音造成的错字（字数不变），并生成内容概要和关键字，发布时自动复制。不填 Key 则不启用。")
                 }
                 Section("签名") {
                     Button("签名续期") { showRenew = true }

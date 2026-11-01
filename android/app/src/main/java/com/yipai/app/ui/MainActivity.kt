@@ -68,7 +68,7 @@ private fun App(vm: AppViewModel = viewModel()) {
         Screen.Record -> if (hasPermission) RecordScreen(vm) else PermissionScreen { request.launch(PERMISSIONS) }
         Screen.Settings -> SettingsScreen(vm)
         is Screen.Processing -> ProcessingScreen(screen)
-        is Screen.Done -> DoneScreen(screen, title = vm.titleText, onBack = vm::backToRecord)
+        is Screen.Done -> DoneScreen(screen, vm, onBack = vm::backToRecord)
         is Screen.Failed -> FailedScreen(screen, onRetry = { vm.process(screen.input) }, onBack = vm::backToRecord)
     }
 }
