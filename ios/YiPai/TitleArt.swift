@@ -8,18 +8,19 @@ enum TitleArt {
 
     /// 按画面宽度 `canvasWidth`（像素）渲染；没有文字时返回 nil。图片 scale 固定为 1。
     static func render(main: String, sub: String, canvasWidth: CGFloat) -> UIImage? {
-        let main = main.trimmingCharacters(in: .whitespaces)
-        let sub = sub.trimmingCharacters(in: .whitespaces)
+        let main = lines(main)
+        let sub = lines(sub)
         guard !main.isEmpty || !sub.isEmpty else { return nil }
         let maxWidth = canvasWidth * 0.9
+        // 同一标题的多行共用一个字号，按最长的一行算
         let mainFont = main.isEmpty ? canvasWidth * mainSize : fitSize(main, max: canvasWidth * mainSize, width: maxWidth)
 
-        var parts: [UIImage] = []
-        if !main.isEmpty { parts.append(line(main, size: mainFont, yellow: true)) }
+        var parts: [UIImage] = main.map { line($0, size: mainFont, yellow: true) }
         if !sub.isEmpty {
-            parts.append(line(sub, size: fitSize(sub, max: mainFont * 0.62, width: maxWidth), yellow: false))
+            let subFont = fitSize(sub, max: mainFont * 0.62, width: maxWidth)
+            parts += sub.map { line($0, size: subFont, yellow: false) }
         }
-        // 两行紧挨着：上下各让出一部分留白（描边的空白区）
+        // 各行紧挨着：上下各让出一部分留白（描边的空白区）
         let overlap = (parts.map { $0.size.height }.max() ?? 0) * 0.12
         let totalW = parts.map { $0.size.width }.max() ?? 0
         let totalH = parts.reduce(0) { $0 + $1.size.height } - overlap * CGFloat(parts.count - 1)
@@ -36,9 +37,16 @@ enum TitleArt {
 
     private static func font(_ size: CGFloat) -> UIFont { UIFont.systemFont(ofSize: size, weight: .black) }
 
-    /// 字号：不超过 max，且一行放得下 width
-    private static func fitSize(_ text: String, max maxSize: CGFloat, width: CGFloat) -> CGFloat {
-        let w = (text as NSString).size(withAttributes: [.font: font(maxSize)]).width
+    /// 输入里的换行把标题分成多行；去掉空行和首尾空白
+    static func lines(_ text: String) -> [String] {
+        text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// 字号：不超过 max，且每一行都放得下 width
+    private static func fitSize(_ lines: [String], max maxSize: CGFloat, width: CGFloat) -> CGFloat {
+        let w = lines.map { ($0 as NSString).size(withAttributes: [.font: font(maxSize)]).width }.max() ?? 0
         return w > width ? maxSize * width / w : maxSize
     }
 

@@ -112,19 +112,22 @@ class CaptionPainter(private val width: Int, private val height: Int, private va
             canvas.drawBitmap(image, null, RectF(left, top, left + w, top + h), Paint(Paint.FILTER_BITMAP_FLAG))
             return
         }
-        val main = title.text.trim()
-        val sub = title.subText.trim()
+        val main = titleLines(title.text)
+        val sub = titleLines(title.subText)
+        val maxW = width * 0.9f
+        val mainSize = if (main.isEmpty()) width * MAIN_SIZE else fitSize(main, width * MAIN_SIZE, maxW)
         var y = top
-        if (main.isNotEmpty()) {
-            val size = fitSize(main, width * MAIN_SIZE, width * 0.9f)
-            y = drawStyledLine(canvas, main, size, y, yellow = true)
-        }
+        for (line in main) y = drawStyledLine(canvas, line, mainSize, y, yellow = true)
         if (sub.isNotEmpty()) {
-            val mainSize = if (main.isNotEmpty()) fitSize(main, width * MAIN_SIZE, width * 0.9f) else width * MAIN_SIZE
-            val size = fitSize(sub, mainSize * 0.62f, width * 0.9f)
-            drawStyledLine(canvas, sub, size, y + (if (main.isNotEmpty()) size * 0.08f else 0f), yellow = false)
+            val size = fitSize(sub, mainSize * 0.62f, maxW)
+            if (main.isNotEmpty()) y += size * 0.08f
+            for (line in sub) y = drawStyledLine(canvas, line, size, y, yellow = false)
         }
     }
+
+    /** 同一标题的多行共用一个字号：不超过 [maxSize]，且最长的一行放得下 [maxWidth] */
+    private fun fitSize(lines: List<String>, maxSize: Float, maxWidth: Float): Float =
+        lines.minOf { fitSize(it, maxSize, maxWidth) }
 
     /** 字号：不超过 [maxSize]，且一行放得下 [maxWidth] */
     private fun fitSize(text: String, maxSize: Float, maxWidth: Float): Float {
@@ -189,6 +192,11 @@ class CaptionPainter(private val width: Int, private val height: Int, private va
             .build()
 
     companion object {
+        /** 输入里的换行把标题分成多行；去掉空行和首尾空白 */
+        fun titleLines(text: String): List<String> =
+            text.lines().map { it.trim() }.filter { it.isNotEmpty() }
+
+
         /** 标题顶部位置（占画面高度比例），拍摄预览界面也用这个值 */
         const val TITLE_TOP = 0.08f
         const val SUBTITLE_CENTER = 0.8f

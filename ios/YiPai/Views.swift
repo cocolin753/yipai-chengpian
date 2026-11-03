@@ -66,8 +66,8 @@ struct RecordView: View {
             GeometryReader { geo in
                 ZStack(alignment: .top) {
                     CameraPreview(session: camera.session)
-                    TitlePreview(canvasWidth: geo.size.width)
-                        .frame(maxWidth: geo.size.width * 0.9, maxHeight: geo.size.height * CaptionLayout.titleMaxHeight)
+                    TitlePreview(canvasWidth: geo.size.width, imageMaxHeight: geo.size.height * CaptionLayout.titleMaxHeight)
+                        .frame(maxWidth: geo.size.width * 0.9)
                         .offset(y: geo.size.height * CaptionLayout.titleTop)
                     HStack {
                         SigningBadge()
@@ -141,9 +141,11 @@ struct RecordView: View {
                         Button("改用文字") { model.clearTitleImage() }
                     } else {
                         VStack(spacing: 6) {
-                            TextField("主标题（大字黄色）", text: $model.titleText)
+                            TextField("主标题（大字黄色，回车换行）", text: $model.titleText, axis: .vertical)
+                                .lineLimit(1...3)
                                 .textFieldStyle(.roundedBorder)
-                            TextField("副标题（白字，可不填）", text: $model.subTitleText)
+                            TextField("副标题（白字，可不填，回车换行）", text: $model.subTitleText, axis: .vertical)
+                                .lineLimit(1...3)
                                 .textFieldStyle(.roundedBorder)
                         }
                     }
@@ -178,12 +180,16 @@ struct TitlePreview: View {
     @EnvironmentObject private var model: AppModel
     /// 取景框宽度（点）；艺术字按这个宽度渲染，与成品比例一致
     let canvasWidth: CGFloat
+    /// PNG 标题图的最大高度（与成品一致）；文字标题按行数自然增高
+    let imageMaxHeight: CGFloat
 
     var body: some View {
         if model.useTitleImage {
             // 用 titleImageVersion 作为 id，换图后重新加载
             if let image = UIImage(contentsOfFile: model.titleImageURL.path) {
-                Image(uiImage: image).resizable().scaledToFit().id(model.titleImageVersion)
+                Image(uiImage: image).resizable().scaledToFit()
+                    .frame(maxHeight: imageMaxHeight)
+                    .id(model.titleImageVersion)
             }
         } else if let art = TitleArt.render(main: model.titleText, sub: model.subTitleText, canvasWidth: canvasWidth) {
             Image(uiImage: art)

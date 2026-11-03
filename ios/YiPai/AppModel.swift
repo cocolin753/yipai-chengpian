@@ -59,7 +59,7 @@ final class AppModel: ObservableObject {
     /// 发布时复制到剪贴板的全部文字：标题 + 概要 + 关键字（带 # 号）
     func publishText(_ result: PipelineResult) -> String {
         var lines: [String] = []
-        let head = [titleText, subTitleText].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+        let head = (TitleArt.lines(titleText) + TitleArt.lines(subTitleText)).joined(separator: " ")
         if !head.isEmpty { lines.append(head) }
         if !result.summary.isEmpty { lines.append(result.summary) }
         if !result.keywords.isEmpty { lines.append(result.keywords.map { "#" + $0 }.joined(separator: " ")) }

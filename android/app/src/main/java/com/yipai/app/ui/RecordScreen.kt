@@ -64,6 +64,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -152,8 +153,8 @@ fun RecordScreen(vm: AppViewModel) {
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .offset(y = maxHeight * CaptionPainter.TITLE_TOP)
-                    .widthIn(max = maxWidth * 0.9f)
-                    .heightIn(max = maxHeight * 0.2f),
+                    .widthIn(max = maxWidth * 0.9f),
+                imageMaxHeight = maxHeight * 0.2f,
             )
             if (isRecording) {
                 Text(
@@ -188,15 +189,15 @@ fun RecordScreen(vm: AppViewModel) {
                             OutlinedTextField(
                                 value = vm.titleText,
                                 onValueChange = vm::updateTitle,
-                                placeholder = { Text("主标题（大字黄色）") },
-                                singleLine = true,
+                                placeholder = { Text("主标题（大字黄色，回车换行）") },
+                                maxLines = 3,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                             OutlinedTextField(
                                 value = vm.subTitleText,
                                 onValueChange = vm::updateSubTitle,
-                                placeholder = { Text("副标题（白字，可不填）") },
-                                singleLine = true,
+                                placeholder = { Text("副标题（白字，可不填，回车换行）") },
+                                maxLines = 3,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
@@ -221,28 +222,25 @@ fun RecordScreen(vm: AppViewModel) {
 }
 
 @Composable
-private fun TitlePreview(vm: AppViewModel, modifier: Modifier) {
+private fun TitlePreview(vm: AppViewModel, modifier: Modifier, imageMaxHeight: Dp) {
     if (vm.useTitleImage) {
         val bitmap = remember(vm.titleImageVersion) {
             BitmapFactory.decodeFile(vm.titleImageFile.path)?.asImageBitmap()
         }
         if (bitmap != null) {
-            Image(bitmap, contentDescription = "标题图片", contentScale = ContentScale.Fit, modifier = modifier)
+            Image(bitmap, contentDescription = "标题图片", contentScale = ContentScale.Fit, modifier = modifier.heightIn(max = imageMaxHeight))
         }
     } else if (vm.titleText.isNotBlank() || vm.subTitleText.isNotBlank()) {
-        val main = vm.titleText.trim()
-        val sub = vm.subTitleText.trim()
-        // 字号：一个汉字约等于一个字号宽，按 9:16 取景框约 300dp 宽估算，与成品的“放得下就最大”一致
-        val mainSize = minOf(44f, 310f / maxOf(main.length, 1))
-        val subSize = minOf(mainSize * 0.62f, 310f / maxOf(sub.length, 1))
+        val main = CaptionPainter.titleLines(vm.titleText)
+        val sub = CaptionPainter.titleLines(vm.subTitleText)
+        // 字号：一个汉字约等于一个字号宽，按 9:16 取景框约 300dp 宽估算，与成品的“放得下就最大”一致；
+        // 多行时按最长的一行算，同一标题各行字号相同
+        val mainSize = minOf(44f, 310f / maxOf(main.maxOfOrNull { it.length } ?: 1, 1))
+        val subSize = minOf(mainSize * 0.62f, 310f / maxOf(sub.maxOfOrNull { it.length } ?: 1, 1))
+        val gradient = Brush.verticalGradient(listOf(Color(0xFFFFF46E), Color(0xFFFFCD14), Color(0xFFFF9600)))
         Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-            if (main.isNotEmpty()) {
-                OutlinedTitleText(
-                    main, mainSize.sp,
-                    Brush.verticalGradient(listOf(Color(0xFFFFF46E), Color(0xFFFFCD14), Color(0xFFFF9600))),
-                )
-            }
-            if (sub.isNotEmpty()) OutlinedTitleText(sub, subSize.sp, SolidColor(Color.White))
+            main.forEach { OutlinedTitleText(it, mainSize.sp, gradient) }
+            sub.forEach { OutlinedTitleText(it, subSize.sp, SolidColor(Color.White)) }
         }
     }
 }

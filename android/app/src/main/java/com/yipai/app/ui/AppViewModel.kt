@@ -14,6 +14,7 @@ import com.yipai.app.PipelineResult
 import com.yipai.app.SettingsStore
 import com.yipai.app.core.EditSettings
 import com.yipai.app.llm.LlmConfig
+import com.yipai.app.render.CaptionPainter
 import com.yipai.app.render.TitleSpec
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -68,7 +69,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** 发布时复制到剪贴板的全部文字：标题 + 概要 + 关键字（带 # 号） */
     fun publishText(result: PipelineResult): String = buildString {
-        val head = listOf(titleText, subTitleText).filter { it.isNotBlank() }.joinToString(" ")
+        val head = (CaptionPainter.titleLines(titleText) + CaptionPainter.titleLines(subTitleText)).joinToString(" ")
         if (head.isNotBlank()) append(head)
         if (result.summary.isNotBlank()) { if (isNotEmpty()) append('\n'); append(result.summary) }
         if (result.keywords.isNotEmpty()) {
