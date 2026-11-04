@@ -56,7 +56,7 @@ public enum CutPlanner {
         var count = 0
         for i in items.indices {
             let item = items[i]
-            let text = item.token.text
+            let text = item.token.heard
             var remove = false
             if s.strongFillers.contains(text) {
                 remove = true
@@ -66,7 +66,7 @@ public enum CutPlanner {
                 let isolatedBefore = prev == nil || prev!.seg != item.seg ||
                     !prev!.token.punctAfter.isEmpty || prev!.removed
                 let isolatedAfter = next == nil || next!.seg != item.seg ||
-                    !item.token.punctAfter.isEmpty || isFiller(next!.token.text, s)
+                    !item.token.punctAfter.isEmpty || isFiller(next!.token.heard, s)
                 remove = isolatedBefore && isolatedAfter
             }
             if remove {
@@ -90,7 +90,7 @@ public enum CutPlanner {
             search: for n in stride(from: maxRepeatLen, through: 1, by: -1) {
                 if kept.count < 2 * n { continue }
                 for i in 0...(kept.count - 2 * n) {
-                    if (0..<n).contains(where: { kept[i + $0].token.text != kept[i + n + $0].token.text }) { continue }
+                    if (0..<n).contains(where: { kept[i + $0].token.heard != kept[i + n + $0].token.heard }) { continue }
                     // 第一遍内部不能被标点打断，结尾不能是句末标点
                     if (0..<(n - 1)).contains(where: { !kept[i + $0].token.punctAfter.isEmpty }) { continue }
                     if kept[i + n - 1].token.punctAfter.contains(where: { sentenceEnd.contains($0) }) { continue }
@@ -98,7 +98,7 @@ public enum CutPlanner {
                     let toRemove: ArraySlice<Item>
                     if n == 1 {
                         var len = 1
-                        while i + len < kept.count && kept[i + len].token.text == kept[i].token.text { len += 1 }
+                        while i + len < kept.count && kept[i + len].token.heard == kept[i].token.heard { len += 1 }
                         let acrossPause = kept[i].seg != kept[i + 1].seg
                         if len >= 3 {
                             toRemove = kept[i..<(i + len - 1)]
@@ -108,7 +108,7 @@ public enum CutPlanner {
                             continue
                         }
                     } else {
-                        if kept[i].token.text.hasPrefix("一") { continue }
+                        if kept[i].token.heard.hasPrefix("一") { continue }
                         toRemove = kept[i..<(i + n)]
                     }
                     toRemove.forEach { $0.removed = true }

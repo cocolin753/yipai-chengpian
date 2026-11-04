@@ -44,7 +44,7 @@ object CutPlanner {
         var count = 0
         for (i in items.indices) {
             val item = items[i]
-            val text = item.token.text
+            val text = item.token.heard
             val remove = when (text) {
                 in s.strongFillers -> true
                 in s.weakFillers -> {
@@ -53,7 +53,7 @@ object CutPlanner {
                     val isolatedBefore = prev == null || prev.seg != item.seg ||
                         prev.token.punctAfter.isNotEmpty() || prev.removed
                     val isolatedAfter = next == null || next.seg != item.seg ||
-                        item.token.punctAfter.isNotEmpty() || isFiller(next.token.text, s)
+                        item.token.punctAfter.isNotEmpty() || isFiller(next.token.heard, s)
                     isolatedBefore && isolatedAfter
                 }
                 else -> false
@@ -80,14 +80,14 @@ object CutPlanner {
             val kept = items.filter { !it.removed }
             search@ for (n in MAX_REPEAT_LEN downTo 1) {
                 for (i in 0..kept.size - 2 * n) {
-                    if ((0 until n).any { k -> kept[i + k].token.text != kept[i + n + k].token.text }) continue
+                    if ((0 until n).any { k -> kept[i + k].token.heard != kept[i + n + k].token.heard }) continue
                     // 第一遍内部不能被标点打断，结尾不能是句末标点
                     if ((0 until n - 1).any { k -> kept[i + k].token.punctAfter.isNotEmpty() }) continue
                     if (kept[i + n - 1].token.punctAfter.any { it in SENTENCE_END }) continue
 
                     val toRemove = if (n == 1) {
                         var len = 1
-                        while (i + len < kept.size && kept[i + len].token.text == kept[i].token.text) len++
+                        while (i + len < kept.size && kept[i + len].token.heard == kept[i].token.heard) len++
                         val acrossPause = kept[i].seg != kept[i + 1].seg
                         when {
                             len >= 3 -> kept.subList(i, i + len - 1)
@@ -95,7 +95,7 @@ object CutPlanner {
                             else -> continue
                         }
                     } else {
-                        if (kept[i].token.text.startsWith("一")) continue
+                        if (kept[i].token.heard.startsWith("一")) continue
                         kept.subList(i, i + n)
                     }
                     toRemove.forEach { it.removed = true }

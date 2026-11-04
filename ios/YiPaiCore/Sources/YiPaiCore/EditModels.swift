@@ -7,12 +7,16 @@ public struct Token: Equatable {
     public var start: Double
     public var end: Double
     public var punctAfter: String
+    /// 识别原文。`text` 是字幕显示的文字（可能经大模型纠错，长度可变）；
+    /// 删语气词、删重复这些剪辑决定都按 `heard` 来，纠错不影响剪辑。
+    public var heard: String
 
-    public init(text: String, start: Double, end: Double, punctAfter: String = "") {
+    public init(text: String, start: Double, end: Double, punctAfter: String = "", heard: String? = nil) {
         self.text = text
         self.start = start
         self.end = end
         self.punctAfter = punctAfter
+        self.heard = heard ?? text
     }
 }
 

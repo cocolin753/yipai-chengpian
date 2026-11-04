@@ -51,7 +51,7 @@ enum Pipeline {
                 utterances = r.utterances
                 summary = r.summary
                 keywords = r.keywords
-                note = "文字优化：改了 \(r.changed) 句" + (r.rejected > 0 ? "，\(r.rejected) 句字数不符已保留原文" : "")
+                note = "文字优化：改了 \(r.changed) 句" + (r.rejected > 0 ? "，\(r.rejected) 句改动太大已保留原文" : "")
             } catch {
                 note = "文字优化失败，已用原识别结果：\(error.localizedDescription)"
             }
@@ -72,7 +72,7 @@ enum Pipeline {
                               summary: summary, keywords: keywords, llmNote: note)
     }
 
-    /// 请大模型纠错：每句单独校验字数，不符的那句保留原文
+    /// 请大模型纠错：每句单独对齐，增删字太多的那句保留原文
     private static func refine(_ cfg: LlmConfig, _ src: [Utterance])
         async throws -> (utterances: [Utterance], summary: String, keywords: [String], changed: Int, rejected: Int) {
         let idx = src.indices.filter { !src[$0].tokens.isEmpty }

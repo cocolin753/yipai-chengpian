@@ -5,12 +5,15 @@ package com.yipai.app.core
 /**
  * 识别出的一个字（英文为一个词片，以空格开头表示新单词）。
  * 时间单位为秒，基于原始视频时间轴。[punctAfter] 为紧跟其后的标点。
+ * [text] 是字幕显示的文字（可能经大模型纠错，长度可变）；[heard] 是识别原文，
+ * 删语气词、删重复这些剪辑决定都按 [heard] 来，纠错不影响剪辑。
  */
 data class Token(
     val text: String,
     val start: Double,
     val end: Double,
     val punctAfter: String = "",
+    val heard: String = text,
 )
 
 /** VAD 切出的一段连续语音及其中的字。段与段之间的空隙就是停顿。 */

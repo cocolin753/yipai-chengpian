@@ -127,7 +127,41 @@ final class TranscriptAlignerTests: XCTestCase {
         XCTAssertEqual(r?.tokens.last?.punctAfter, "。")
     }
 
-    func testLengthMismatchRejected() {
-        XCTAssertNil(TranscriptAligner.apply(utt(["我", "们", "好"]), refined: "大家好啊"))
+    func testInsertedCharJoinsPreviousToken() {
+        let u = utt(["我", "们", "天", "来", "聊", "聊"])
+        let r = TranscriptAligner.apply(u, refined: "我们今天来聊聊。")
+        XCTAssertEqual(r?.tokens.map(\.text).joined(), "我们今天来聊聊")
+        XCTAssertEqual(r?.tokens.map(\.start), u.tokens.map(\.start))
+        XCTAssertEqual(r?.tokens.map(\.heard), u.tokens.map(\.text))
+    }
+
+    func testInsertedCharAtStart() {
+        let r = TranscriptAligner.apply(utt(["家", "好", "啊"]), refined: "大家好啊")
+        XCTAssertEqual(r?.tokens.first?.text, "大家")
+    }
+
+    func testDeletedCharBecomesEmptyButKeepsTiming() {
+        let r = TranscriptAligner.apply(utt(["我", "们", "们", "今", "天", "好"]), refined: "我们今天好")
+        XCTAssertEqual(r?.tokens.map(\.text).joined(), "我们今天好")
+        XCTAssertEqual(r?.tokens.count, 6)
+        XCTAssertEqual(r?.tokens.filter { $0.text.isEmpty }.count, 1)
+    }
+
+    func testRewriteRejected() {
+        XCTAssertNil(TranscriptAligner.apply(utt(["我", "们", "今", "天", "来", "聊", "聊"]), refined: "今天我们一起来好好地聊一聊吧"))
+    }
+
+    func testCutPlanUsesHeardText() {
+        // 纠错把语气词“嗯”改成了别的字，剪辑时仍按识别原文把它删掉
+        let u = Utterance(start: 0, end: 3, tokens: [
+            Token(text: "嗯", start: 0, end: 1, punctAfter: "，"), Token(text: "好", start: 1, end: 2),
+            Token(text: "的", start: 2, end: 3, punctAfter: "。"),
+        ])
+        var fixed = u
+        fixed.tokens[0].text = "恩"
+        let a = CutPlanner.plan([u], duration: 3)
+        let b = CutPlanner.plan([fixed], duration: 3)
+        XCTAssertEqual(a.keep, b.keep)
+        XCTAssertEqual(a.removedFillers, b.removedFillers)
     }
 }

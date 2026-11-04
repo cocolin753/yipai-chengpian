@@ -66,7 +66,7 @@ class Pipeline(private val context: Context) {
                 utterances = r.utterances
                 summary = r.summary
                 keywords = r.keywords
-                note = "文字优化：改了 ${r.changed} 句" + if (r.rejected > 0) "，${r.rejected} 句字数不符已保留原文" else ""
+                note = "文字优化：改了 ${r.changed} 句" + if (r.rejected > 0) "，${r.rejected} 句改动太大已保留原文" else ""
             } catch (e: Exception) {
                 note = "文字优化失败，已用原识别结果：${e.message}"
             }
@@ -90,7 +90,7 @@ class Pipeline(private val context: Context) {
 
     private class Refined(val utterances: List<Utterance>, val summary: String, val keywords: List<String>, val changed: Int, val rejected: Int)
 
-    /** 请大模型纠错：每句单独校验字数，不符的那句保留原文 */
+    /** 请大模型纠错：每句单独对齐，增删字太多的那句保留原文 */
     private fun refine(cfg: LlmConfig, src: List<Utterance>): Refined {
         val idx = src.indices.filter { src[it].tokens.isNotEmpty() }
         val resp = DeepSeek.refine(cfg, idx.map { TranscriptAligner.lineText(src[it]) })
