@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -148,14 +149,29 @@ fun RecordScreen(vm: AppViewModel) {
                 .aspectRatio(9f / 16f),
         ) {
             AndroidView({ previewView }, Modifier.fillMaxSize())
-            TitlePreview(
-                vm = vm,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset(y = maxHeight * CaptionPainter.TITLE_TOP)
-                    .widthIn(max = maxWidth * 0.9f),
-                imageMaxHeight = maxHeight * 0.2f,
-            )
+            val prompter = vm.prompter
+            val showPrompter = isRecording && prompter.show && prompter.script.isNotBlank()
+            if (showPrompter) {
+                // 提词器放在画面上部，靠近镜头，眼神不容易偏；只显示在屏幕上，不录进视频
+                PrompterOverlay(
+                    prompter,
+                    onSpeedChange = { vm.updatePrompter(vm.prompter.copy(speed = it)) },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(start = 10.dp, end = 10.dp, top = 44.dp)
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.42f),
+                )
+            } else {
+                TitlePreview(
+                    vm = vm,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset(y = maxHeight * CaptionPainter.TITLE_TOP)
+                        .widthIn(max = maxWidth * 0.9f),
+                    imageMaxHeight = maxHeight * 0.2f,
+                )
+            }
             if (isRecording) {
                 Text(
                     formatTime(elapsedMs),
@@ -212,6 +228,9 @@ fun RecordScreen(vm: AppViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(onClick = vm::openSettings, enabled = !isRecording) { Text("设置") }
+                TextButton(onClick = vm::openPrompter, enabled = !isRecording) {
+                    Text(if (vm.prompter.script.isBlank()) "提词" else "提词 ✓")
+                }
                 RecordButton(isRecording) {
                     if (isRecording) recording?.stop() else startRecording()
                 }

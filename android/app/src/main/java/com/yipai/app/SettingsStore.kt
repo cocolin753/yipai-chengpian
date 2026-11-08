@@ -5,6 +5,19 @@ import com.yipai.app.core.EditSettings
 import com.yipai.app.llm.LlmConfig
 import java.io.File
 
+/** 提词器 */
+data class PrompterSettings(
+    val script: String = "",
+    /** 拍摄时在取景框上方滚动显示 */
+    val show: Boolean = true,
+    /** 按提词稿校对字幕 */
+    val correctSubtitles: Boolean = true,
+    /** 滚动速度：字/秒 */
+    val speed: Float = 4.0f,
+    /** 字号（sp） */
+    val fontSize: Float = 26f,
+)
+
 /** 设置与标题的本地保存 */
 class SettingsStore(private val context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -19,6 +32,27 @@ class SettingsStore(private val context: Context) {
     var subTitle: String
         get() = prefs.getString("subTitle", "") ?: ""
         set(v) = prefs.edit().putString("subTitle", v).apply()
+
+    fun loadPrompter(): PrompterSettings {
+        val d = PrompterSettings()
+        return PrompterSettings(
+            script = prefs.getString("prompterScript", "") ?: "",
+            show = prefs.getBoolean("prompterShow", d.show),
+            correctSubtitles = prefs.getBoolean("prompterCorrect", d.correctSubtitles),
+            speed = prefs.getFloat("prompterSpeed", d.speed),
+            fontSize = prefs.getFloat("prompterFont", d.fontSize),
+        )
+    }
+
+    fun savePrompter(p: PrompterSettings) {
+        prefs.edit()
+            .putString("prompterScript", p.script)
+            .putBoolean("prompterShow", p.show)
+            .putBoolean("prompterCorrect", p.correctSubtitles)
+            .putFloat("prompterSpeed", p.speed)
+            .putFloat("prompterFont", p.fontSize)
+            .apply()
+    }
 
     fun loadLlm(): LlmConfig {
         val d = LlmConfig()

@@ -27,6 +27,7 @@ struct RootView: View {
             switch model.screen {
             case .record: RecordView()
             case .settings: SettingsView()
+            case .prompter: PrompterView()
             case let .processing(stage, progress): ProcessingView(stage: stage, progress: progress)
             case let .done(result): DoneView(result: result)
             case let .failed(message, input): FailedView(message: message, input: input)
@@ -66,9 +67,18 @@ struct RecordView: View {
             GeometryReader { geo in
                 ZStack(alignment: .top) {
                     CameraPreview(session: camera.session)
-                    TitlePreview(canvasWidth: geo.size.width, imageMaxHeight: geo.size.height * CaptionLayout.titleMaxHeight)
-                        .frame(maxWidth: geo.size.width * 0.9)
-                        .offset(y: geo.size.height * CaptionLayout.titleTop)
+                    if camera.isRecording && model.prompter.show
+                        && !model.prompter.script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        // 提词器放在画面上部，靠近镜头，眼神不容易偏；只显示在屏幕上，不录进视频
+                        PrompterOverlay()
+                            .frame(height: geo.size.height * 0.42)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 44)
+                    } else {
+                        TitlePreview(canvasWidth: geo.size.width, imageMaxHeight: geo.size.height * CaptionLayout.titleMaxHeight)
+                            .frame(maxWidth: geo.size.width * 0.9)
+                            .offset(y: geo.size.height * CaptionLayout.titleTop)
+                    }
                     HStack {
                         SigningBadge()
                         Spacer()
@@ -156,6 +166,9 @@ struct RecordView: View {
             }
             HStack {
                 Button("设置") { model.screen = .settings }
+                    .frame(maxWidth: .infinity)
+                    .disabled(camera.isRecording)
+                Button(model.prompter.script.isEmpty ? "提词" : "提词 ✓") { model.screen = .prompter }
                     .frame(maxWidth: .infinity)
                     .disabled(camera.isRecording)
                 RecordButton(isRecording: camera.isRecording) {
@@ -350,6 +363,129 @@ struct SettingsView: View {
         VStack(alignment: .leading) {
             Text(label)
             Slider(value: value, in: range, step: step)
+        }
+    }
+}
+
+// MARK: - 提词器
+
+private func contentCount(_ text: String) -> Int { text.filter { $0.isLetter || $0.isNumber }.count }
+
+/// 提词器设置页：输入提词稿、滚动速度、字号
+struct PrompterView: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("\(contentCount(model.prompter.script)) 字，约 \(estimate)。可以只念其中一部分，也可以临场加话，字幕以实际说的为准。")
+                    .font(.caption).foregroundStyle(.secondary)
+                TextEditor(text: $model.prompter.script)
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .background(Color.secondary.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(alignment: .topLeading) {
+                        if model.prompter.script.isEmpty {
+                            Text("粘贴或输入口播稿").foregroundStyle(.secondary).padding(14).allowsHitTesting(false)
+                        }
+                    }
+                Toggle("拍摄时显示提词器", isOn: $model.prompter.show)
+                Toggle("按提词稿校对字幕", isOn: $model.prompter.correctSubtitles)
+                Text(String(format: "滚动速度：%.1f 字/秒", model.prompter.speed))
+                Slider(value: $model.prompter.speed, in: 2...7, step: 0.1)
+                Text("字号：\(Int(model.prompter.fontSize))")
+                Slider(value: $model.prompter.fontSize, in: 18...40, step: 1)
+            }
+            .padding(16)
+            .navigationTitle("提词器")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("清空") { model.prompter.script = "" }.disabled(model.prompter.script.isEmpty)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { model.screen = .record }
+                }
+            }
+        }
+    }
+
+    private var estimate: String {
+        let sec = Int(Double(contentCount(model.prompter.script)) / model.prompter.speed)
+        return sec < 60 ? "\(sec) 秒" : "\(sec / 60) 分 \(sec % 60) 秒"
+    }
+}
+
+private struct PrompterHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// 拍摄时的提词器：按设定的“字/秒”匀速滚动。点文字暂停/继续，手指拖动可前后调整，
+/// 下方按钮调快慢（会保存）。只显示在屏幕上，不会录进视频。
+struct PrompterOverlay: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var offset: CGFloat = 0
+    @State private var paused = false
+    @State private var textHeight: CGFloat = 0
+    @State private var dragStart: CGFloat?
+    @State private var startTime = Date()
+    private static let fps = 30.0
+    private let timer = Timer.publish(every: 1 / PrompterOverlay.fps, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        let p = model.prompter
+        VStack(spacing: 0) {
+            GeometryReader { geo in
+                ZStack(alignment: .topLeading) {
+                    Text(p.script.trimmingCharacters(in: .whitespacesAndNewlines))
+                        .font(.system(size: p.fontSize, weight: .medium))
+                        .lineSpacing(p.fontSize * 0.45)
+                        .foregroundStyle(.white)
+                        .frame(width: max(geo.size.width - 28, 10), alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .background(GeometryReader { g in
+                            Color.clear.preference(key: PrompterHeightKey.self, value: g.size.height)
+                        })
+                        .padding(.horizontal, 14)
+                        .padding(.top, 8)
+                        .offset(y: -offset)
+                    // 阅读线：看这一行附近念即可
+                    Rectangle().fill(Color.yellow).frame(width: 8, height: 3)
+                        .padding(.top, 8 + p.fontSize * 0.6)
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            }
+            .clipped()
+            .contentShape(Rectangle())
+            .onTapGesture { paused.toggle() }
+            .gesture(
+                DragGesture()
+                    .onChanged { v in
+                        if dragStart == nil { dragStart = offset }
+                        offset = min(max((dragStart ?? 0) - v.translation.height, 0), textHeight)
+                    }
+                    .onEnded { _ in dragStart = nil }
+            )
+            HStack {
+                Button("慢") { model.prompter.speed = max(2, p.speed - 0.2) }
+                Spacer()
+                Text(paused ? "已暂停 · 点文字继续" : String(format: "%.1f 字/秒 · 点文字暂停", p.speed))
+                    .font(.caption).foregroundStyle(.gray)
+                Spacer()
+                Button("快") { model.prompter.speed = min(7, p.speed + 0.2) }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+        }
+        .background(Color.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 10))
+        .onPreferenceChange(PrompterHeightKey.self) { textHeight = $0 }
+        .onReceive(timer) { _ in
+            // 开拍后留一点时间再开始滚
+            guard !paused, dragStart == nil, textHeight > 0, Date().timeIntervalSince(startTime) > 1.5 else { return }
+            let chars = CGFloat(max(1, contentCount(p.script)))
+            offset = min(offset + CGFloat(p.speed) * textHeight / chars / CGFloat(Self.fps), textHeight)
         }
     }
 }

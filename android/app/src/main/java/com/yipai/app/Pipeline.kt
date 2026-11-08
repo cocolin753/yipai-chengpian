@@ -11,6 +11,7 @@ import com.yipai.app.asr.SpeechRecognizer
 import com.yipai.app.core.CutPlanner
 import com.yipai.app.core.EditPlan
 import com.yipai.app.core.EditSettings
+import com.yipai.app.core.ScriptAligner
 import com.yipai.app.core.TranscriptAligner
 import com.yipai.app.core.Utterance
 import com.yipai.app.llm.DeepSeek
@@ -43,6 +44,8 @@ class Pipeline(private val context: Context) {
         title: TitleSpec,
         settings: EditSettings,
         llm: LlmConfig,
+        /** 提词稿；为空则不按提词稿校对 */
+        script: String,
         onProgress: (stage: String, progress: Float) -> Unit,
     ): PipelineResult = withContext(Dispatchers.Default) {
         val info = probe(input)
@@ -58,19 +61,31 @@ class Pipeline(private val context: Context) {
         var utterances = rawUtterances
         var summary = ""
         var keywords = emptyList<String>()
-        var note = ""
+        val notes = mutableListOf<String>()
+        // 对上提词稿的句子以提词稿为准，大模型不再改
+        var locked = emptySet<Int>()
+        if (script.isNotBlank() && rawUtterances.isNotEmpty()) {
+            onProgress("按提词稿校对", 0.45f)
+            val r = ScriptAligner.apply(rawUtterances, script)
+            utterances = r.utterances
+            locked = r.matched
+            val total = rawUtterances.count { it.tokens.isNotEmpty() }
+            notes += if (r.tooLong) "提词稿太长，未按提词稿校对"
+            else "提词稿校对：${r.matched.size}/$total 句对上提词稿，改了 ${r.changed} 句"
+        }
         if (llm.enabled && rawUtterances.isNotEmpty()) {
-            onProgress("优化文字", 0.45f)
+            onProgress("优化文字", 0.46f)
             try {
-                val r = refine(llm, rawUtterances)
+                val r = refine(llm, utterances, locked)
                 utterances = r.utterances
                 summary = r.summary
                 keywords = r.keywords
-                note = "文字优化：改了 ${r.changed} 句" + if (r.rejected > 0) "，${r.rejected} 句改动太大已保留原文" else ""
+                notes += "文字优化：改了 ${r.changed} 句" + if (r.rejected > 0) "，${r.rejected} 句改动太大已保留原文" else ""
             } catch (e: Exception) {
-                note = "文字优化失败，已用原识别结果：${e.message}"
+                notes += "文字优化失败，已用${if (locked.isEmpty()) "原识别" else "提词稿校对"}结果：${e.message}"
             }
         }
+        val note = notes.joinToString("\n")
 
         val plan = CutPlanner.plan(utterances, info.duration, settings)
 
@@ -90,14 +105,15 @@ class Pipeline(private val context: Context) {
 
     private class Refined(val utterances: List<Utterance>, val summary: String, val keywords: List<String>, val changed: Int, val rejected: Int)
 
-    /** 请大模型纠错：每句单独对齐，增删字太多的那句保留原文 */
-    private fun refine(cfg: LlmConfig, src: List<Utterance>): Refined {
+    /** 请大模型纠错：每句单独对齐，增删字太多的那句保留原文；[locked] 里的句子只用作上下文，不改 */
+    private fun refine(cfg: LlmConfig, src: List<Utterance>, locked: Set<Int>): Refined {
         val idx = src.indices.filter { src[it].tokens.isNotEmpty() }
         val resp = DeepSeek.refine(cfg, idx.map { TranscriptAligner.lineText(src[it]) })
         val out = src.toMutableList()
         var changed = 0
         var rejected = 0
         idx.forEachIndexed { k, i ->
+            if (i in locked) return@forEachIndexed
             val text = resp.lines[k] ?: return@forEachIndexed
             val fixed = TranscriptAligner.apply(src[i], text)
             if (fixed == null) rejected++

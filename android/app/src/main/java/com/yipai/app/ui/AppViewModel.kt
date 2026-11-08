@@ -11,6 +11,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.yipai.app.Pipeline
 import com.yipai.app.PipelineResult
+import com.yipai.app.PrompterSettings
 import com.yipai.app.SettingsStore
 import com.yipai.app.core.EditSettings
 import com.yipai.app.llm.LlmConfig
@@ -25,6 +26,7 @@ import java.io.File
 sealed interface Screen {
     data object Record : Screen
     data object Settings : Screen
+    data object Prompter : Screen
     data class Processing(val stage: String, val progress: Float) : Screen
     data class Done(val result: PipelineResult) : Screen
     data class Failed(val message: String, val input: File) : Screen
@@ -40,6 +42,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var subTitleText by mutableStateOf(store.subTitle)
         private set
     var llm by mutableStateOf(store.loadLlm())
+        private set
+    var prompter by mutableStateOf(store.loadPrompter())
         private set
     var useTitleImage by mutableStateOf(store.useTitleImage)
         private set
@@ -60,6 +64,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun updateSubTitle(text: String) {
         subTitleText = text
         store.subTitle = text
+    }
+
+    fun updatePrompter(p: PrompterSettings) {
+        prompter = p
+        store.savePrompter(p)
     }
 
     fun updateLlm(c: LlmConfig) {
@@ -113,6 +122,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun openSettings() { screen = Screen.Settings }
 
+    fun openPrompter() { screen = Screen.Prompter }
+
     fun backToRecord() { screen = Screen.Record }
 
     /** 开始新录制前清理旧的原始录像 */
@@ -126,10 +137,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val title = TitleSpec(titleText, subTitleText, if (useTitleImage) titleImageFile.path else null)
         val s = settings
         val llmConfig = llm
+        val script = prompter.let { if (it.correctSubtitles) it.script else "" }
         screen = Screen.Processing("准备中", 0f)
         viewModelScope.launch {
             screen = try {
-                val result = Pipeline(getApplication()).run(input, title, s, llmConfig) { stage, p ->
+                val result = Pipeline(getApplication()).run(input, title, s, llmConfig, script) { stage, p ->
                     screen = Screen.Processing(stage, p)
                 }
                 Screen.Done(result)

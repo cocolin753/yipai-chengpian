@@ -26,6 +26,7 @@ enum Pipeline {
         title: TitleSpec,
         settings: EditSettings,
         llm: LlmConfig,
+        script: String,
         progress: @escaping (String, Float) -> Void
     ) async throws -> PipelineResult {
         let asset = AVURLAsset(url: input)
@@ -43,19 +44,31 @@ enum Pipeline {
         var utterances = rawUtterances
         var summary = ""
         var keywords: [String] = []
-        var note = ""
+        var notes: [String] = []
+        // 对上提词稿的句子以提词稿为准，大模型不再改
+        var locked = Set<Int>()
+        if !script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !rawUtterances.isEmpty {
+            progress("按提词稿校对", 0.45)
+            let r = ScriptAligner.apply(rawUtterances, script: script)
+            utterances = r.utterances
+            locked = r.matched
+            let total = rawUtterances.filter { !$0.tokens.isEmpty }.count
+            notes.append(r.tooLong ? "提词稿太长，未按提词稿校对"
+                         : "提词稿校对：\(r.matched.count)/\(total) 句对上提词稿，改了 \(r.changed) 句")
+        }
         if llm.enabled && !rawUtterances.isEmpty {
-            progress("优化文字", 0.45)
+            progress("优化文字", 0.46)
             do {
-                let r = try await refine(llm, rawUtterances)
+                let r = try await refine(llm, utterances, locked: locked)
                 utterances = r.utterances
                 summary = r.summary
                 keywords = r.keywords
-                note = "文字优化：改了 \(r.changed) 句" + (r.rejected > 0 ? "，\(r.rejected) 句改动太大已保留原文" : "")
+                notes.append("文字优化：改了 \(r.changed) 句" + (r.rejected > 0 ? "，\(r.rejected) 句改动太大已保留原文" : ""))
             } catch {
-                note = "文字优化失败，已用原识别结果：\(error.localizedDescription)"
+                notes.append("文字优化失败，已用\(locked.isEmpty ? "原识别" : "提词稿校对")结果：\(error.localizedDescription)")
             }
         }
+        let note = notes.joined(separator: "\n")
 
         let plan = CutPlanner.plan(utterances, duration: duration, settings: settings)
 
@@ -72,15 +85,15 @@ enum Pipeline {
                               summary: summary, keywords: keywords, llmNote: note)
     }
 
-    /// 请大模型纠错：每句单独对齐，增删字太多的那句保留原文
-    private static func refine(_ cfg: LlmConfig, _ src: [Utterance])
+    /// 请大模型纠错：每句单独对齐，增删字太多的那句保留原文；locked 里的句子只用作上下文，不改
+    private static func refine(_ cfg: LlmConfig, _ src: [Utterance], locked: Set<Int>)
         async throws -> (utterances: [Utterance], summary: String, keywords: [String], changed: Int, rejected: Int) {
         let idx = src.indices.filter { !src[$0].tokens.isEmpty }
         let resp = try await DeepSeek.refine(cfg, lines: idx.map { TranscriptAligner.lineText(src[$0]) })
         var out = src
         var changed = 0
         var rejected = 0
-        for (k, i) in idx.enumerated() {
+        for (k, i) in idx.enumerated() where !locked.contains(i) {
             guard let text = resp.lines[k] else { continue }
             if let fixed = TranscriptAligner.apply(src[i], refined: text) {
                 if fixed.tokens != src[i].tokens { changed += 1 }

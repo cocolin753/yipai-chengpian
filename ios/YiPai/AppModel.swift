@@ -5,9 +5,23 @@ import YiPaiCore
 enum Screen {
     case record
     case settings
+    case prompter
     case processing(stage: String, progress: Float)
     case done(PipelineResult)
     case failed(message: String, input: URL)
+}
+
+/// 提词器
+struct PrompterSettings: Codable {
+    var script = ""
+    /// 拍摄时在取景框上方滚动显示
+    var show = true
+    /// 按提词稿校对字幕
+    var correctSubtitles = true
+    /// 滚动速度：字/秒
+    var speed = 4.0
+    /// 字号（点）
+    var fontSize = 26.0
 }
 
 @MainActor
@@ -16,6 +30,7 @@ final class AppModel: ObservableObject {
     @Published var titleText: String { didSet { defaults.set(titleText, forKey: "title") } }
     @Published var subTitleText: String { didSet { defaults.set(subTitleText, forKey: "subTitle") } }
     @Published var llm: LlmConfig { didSet { saveLlm() } }
+    @Published var prompter: PrompterSettings { didSet { savePrompter() } }
     @Published private(set) var useTitleImage: Bool
     /// 每次换图片 +1，让预览刷新
     @Published private(set) var titleImageVersion = 0
@@ -38,6 +53,12 @@ final class AppModel: ObservableObject {
         } else {
             llm = LlmConfig()
         }
+        if let data = defaults.data(forKey: "prompter"),
+           let p = try? JSONDecoder().decode(PrompterSettings.self, from: data) {
+            prompter = p
+        } else {
+            prompter = PrompterSettings()
+        }
         useTitleImage = defaults.bool(forKey: "useTitleImage") &&
             FileManager.default.fileExists(atPath: Self.titleImageFile.path)
         if let data = defaults.data(forKey: "settings"),
@@ -50,6 +71,10 @@ final class AppModel: ObservableObject {
 
     private func saveSettings() {
         if let data = try? JSONEncoder().encode(settings) { defaults.set(data, forKey: "settings") }
+    }
+
+    private func savePrompter() {
+        if let data = try? JSONEncoder().encode(prompter) { defaults.set(data, forKey: "prompter") }
     }
 
     private func saveLlm() {
@@ -94,6 +119,7 @@ final class AppModel: ObservableObject {
         let title = titleSpec
         let s = settings
         let llmConfig = llm
+        let script = prompter.correctSubtitles ? prompter.script : ""
         screen = .processing(stage: "准备中", progress: 0)
         UIApplication.shared.isIdleTimerDisabled = true
         // 切到后台时多争取一点时间
@@ -104,7 +130,7 @@ final class AppModel: ObservableObject {
                 UIApplication.shared.endBackgroundTask(bgTask)
             }
             do {
-                let result = try await Pipeline.run(input: input, title: title, settings: s, llm: llmConfig) { stage, p in
+                let result = try await Pipeline.run(input: input, title: title, settings: s, llm: llmConfig, script: script) { stage, p in
                     Task { @MainActor in
                         if case .processing = self.screen { self.screen = .processing(stage: stage, progress: p) }
                     }
