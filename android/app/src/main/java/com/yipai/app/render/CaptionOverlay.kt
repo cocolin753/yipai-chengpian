@@ -17,12 +17,13 @@ import android.text.TextPaint
 import android.text.TextUtils
 import androidx.media3.effect.BitmapOverlay
 import com.yipai.app.core.SubtitleLine
+import com.yipai.app.core.TitleMotion
 
 /** 标题：主标题 + 副标题文字，或 PNG 图片（图片优先）。 */
 data class TitleSpec(val text: String, val subText: String, val imagePath: String?)
 
 /**
- * 画面叠加层：标题全程显示 + 当前字幕。
+ * 画面叠加层：标题全程显示（前 5 秒在正中，之后移到顶部，见 [TitleMotion]）+ 当前字幕。
  * 使用与视频画面等大的透明位图，标题和字幕画在同一张图上。
  */
 class CaptionOverlay(
@@ -32,21 +33,23 @@ class CaptionOverlay(
     private val lines: List<SubtitleLine>,
 ) : BitmapOverlay() {
     private val painter = CaptionPainter(width, height, title)
-    private val titleOnly = painter.newBitmap().also { painter.draw(it, null) }
     // 两张位图轮换使用：BitmapOverlay 只在位图对象变化时重新上传纹理
     private val buffers = arrayOf(painter.newBitmap(), painter.newBitmap())
     private var bufferIndex = 0
-    private var currentLine = -1
-    private var current = titleOnly
+    private var currentLine = -2
+    private var currentTop = Int.MIN_VALUE
+    private var current = buffers[0]
 
     override fun getBitmap(presentationTimeUs: Long): Bitmap {
-        val idx = lineAt(presentationTimeUs / 1_000_000.0)
-        if (idx != currentLine) {
+        val t = presentationTimeUs / 1_000_000.0
+        val idx = lineAt(t)
+        val top = painter.titleTopAt(t)
+        // 只有字幕换行或标题移动时才重画
+        if (idx != currentLine || top != currentTop) {
             currentLine = idx
-            current = if (idx < 0) titleOnly else {
-                bufferIndex = 1 - bufferIndex
-                buffers[bufferIndex].also { painter.draw(it, lines[idx].text) }
-            }
+            currentTop = top
+            bufferIndex = 1 - bufferIndex
+            current = buffers[bufferIndex].also { painter.draw(it, if (idx < 0) null else lines[idx].text, top) }
         }
         return current
     }
@@ -92,15 +95,35 @@ class CaptionPainter(private val width: Int, private val height: Int, private va
 
     fun newBitmap(): Bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
 
-    fun draw(bitmap: Bitmap, subtitle: String?) {
+    /** 标题位图上下留的边（描边、投影不被裁掉） */
+    private val titlePad = (width * 0.05f).toInt()
+    /** 标题本身的高度（不含留边） */
+    private var titleHeight = 0
+
+    /** 标题单独画一次，之后按时间贴到不同位置；没有标题时为 null */
+    private val titleArt: Bitmap? = run {
+        val full = newBitmap()
+        val bottom = kotlin.math.ceil(drawTitle(Canvas(full), titlePad.toFloat())).toInt()
+        titleHeight = bottom - titlePad
+        if (titleHeight <= 0) { full.recycle(); null }
+        else Bitmap.createBitmap(full, 0, 0, width, minOf(bottom + titlePad, height)).also { if (it !== full) full.recycle() }
+    }
+
+    /** 成品时间 [t] 秒时标题顶边的 y（像素） */
+    fun titleTopAt(t: Double): Int {
+        if (titleArt == null) return 0
+        return TitleMotion.top(t, (height - titleHeight) / 2.0, height * TITLE_TOP.toDouble()).toInt()
+    }
+
+    fun draw(bitmap: Bitmap, subtitle: String?, titleTop: Int) {
         bitmap.eraseColor(Color.TRANSPARENT)
         val canvas = Canvas(bitmap)
-        drawTitle(canvas)
+        titleArt?.let { canvas.drawBitmap(it, 0f, (titleTop - titlePad).toFloat(), null) }
         if (!subtitle.isNullOrEmpty()) drawSubtitle(canvas, subtitle)
     }
 
-    private fun drawTitle(canvas: Canvas) {
-        val top = height * TITLE_TOP
+    /** 从 [top] 开始画标题，返回标题底边的 y；没有标题返回 [top] */
+    private fun drawTitle(canvas: Canvas, top: Float): Float {
         val image = titleImage
         if (image != null) {
             val maxW = width * 0.9f
@@ -110,7 +133,7 @@ class CaptionPainter(private val width: Int, private val height: Int, private va
             val h = image.height * scale
             val left = (width - w) / 2
             canvas.drawBitmap(image, null, RectF(left, top, left + w, top + h), Paint(Paint.FILTER_BITMAP_FLAG))
-            return
+            return top + h
         }
         val main = titleLines(title.text)
         val sub = titleLines(title.subText)
@@ -123,6 +146,7 @@ class CaptionPainter(private val width: Int, private val height: Int, private va
             if (main.isNotEmpty()) y += size * 0.08f
             for (line in sub) y = drawStyledLine(canvas, line, size, y, yellow = false)
         }
+        return y
     }
 
     /** 同一标题的多行共用一个字号：不超过 [maxSize]，且最长的一行放得下 [maxWidth] */

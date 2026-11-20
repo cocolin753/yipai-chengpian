@@ -15,6 +15,9 @@ enum CaptionLayout {
     static let titleTop: CGFloat = 0.08
     static let titleMaxHeight: CGFloat = 0.2
     static let subtitleCenter: CGFloat = 0.8
+    /// 开头标题停在画面正中的秒数（平台自动截封面时标题完整、醒目），之后移到顶部
+    static let titleHoldSeconds: Double = 5
+    static let titleMoveSeconds: Double = 0.5
 }
 
 /// 用 AVFoundation 一次导出：裁剪拼接 + 变速（不变调）+ 标题 + 字幕 + 硬件编码
@@ -130,6 +133,7 @@ enum CaptionRenderer {
             layer.contents = cg
             layer.contentsGravity = .resizeAspect
             layer.frame = CGRect(x: (size.width - w) / 2, y: size.height - top - h, width: w, height: h)
+            addCenterHold(layer, size: size)
             return layer
         }
         guard let art = TitleArt.render(main: title.text, sub: title.subText, canvasWidth: size.width),
@@ -139,7 +143,21 @@ enum CaptionRenderer {
         layer.frame = CGRect(
             x: (size.width - art.size.width) / 2, y: size.height - top - art.size.height,
             width: art.size.width, height: art.size.height)
+        addCenterHold(layer, size: size)
         return layer
+    }
+
+    /// 前 5 秒停在画面正中，之后用 0.5 秒平滑移到顶部（layer.frame 为最终位置）
+    private static func addCenterHold(_ layer: CALayer, size: CGSize) {
+        let move = CABasicAnimation(keyPath: "position.y")
+        move.fromValue = size.height / 2
+        move.toValue = layer.position.y
+        move.beginTime = AVCoreAnimationBeginTimeAtZero + CaptionLayout.titleHoldSeconds
+        move.duration = CaptionLayout.titleMoveSeconds
+        move.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        move.fillMode = .backwards // 开始前保持在正中
+        move.isRemovedOnCompletion = false
+        layer.add(move, forKey: "centerHold")
     }
 
     /// 每行字幕一个文字层，只在自己的时间段内显示
