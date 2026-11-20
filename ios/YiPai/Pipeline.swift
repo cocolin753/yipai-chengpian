@@ -58,15 +58,11 @@ enum Pipeline {
         }
         if llm.enabled && !rawUtterances.isEmpty {
             progress("优化文字", 0.46)
-            do {
-                let r = try await refine(llm, utterances, locked: locked)
-                utterances = r.utterances
-                summary = r.summary
-                keywords = r.keywords
-                notes.append("文字优化：改了 \(r.changed) 句" + (r.rejected > 0 ? "，\(r.rejected) 句改动太大已保留原文" : ""))
-            } catch {
-                notes.append("文字优化失败，已用\(locked.isEmpty ? "原识别" : "提词稿校对")结果：\(error.localizedDescription)")
-            }
+            let r = await refine(llm, utterances, locked: locked)
+            utterances = r.utterances
+            summary = r.summary
+            keywords = r.keywords
+            notes += r.notes
         }
         let note = notes.joined(separator: "\n")
 
@@ -85,24 +81,82 @@ enum Pipeline {
                               summary: summary, keywords: keywords, llmNote: note)
     }
 
-    /// 请大模型纠错：每句单独对齐，增删字太多的那句保留原文；locked 里的句子只用作上下文，不改
+    /// 请大模型纠错并生成概要：
+    /// - 对上提词稿的句子（locked）不发去纠错；全对上时只生成概要
+    /// - 其余句子每批不超过 1000 字，分批并发；全文作为上下文
+    /// - 每句单独对齐，增删字太多的那句保留原文；某批失败只影响那一批
     private static func refine(_ cfg: LlmConfig, _ src: [Utterance], locked: Set<Int>)
-        async throws -> (utterances: [Utterance], summary: String, keywords: [String], changed: Int, rejected: Int) {
-        let idx = src.indices.filter { !src[$0].tokens.isEmpty }
-        let resp = try await DeepSeek.refine(cfg, lines: idx.map { TranscriptAligner.lineText(src[$0]) })
+        async -> (utterances: [Utterance], summary: String, keywords: [String], notes: [String]) {
+        let texts = src.map { $0.tokens.isEmpty ? "" : TranscriptAligner.lineText($0) }
+        let full = texts.filter { !$0.isEmpty }.joined(separator: "\n")
+        let batches = LlmPlanner.batches(texts, locked: locked)
+        let context: String? = (batches.count > 1 || !locked.isEmpty) ? full : nil
+
+        async let summaryTask = summarizeResult(cfg, text: full)
+        let results: [Int: Result<[String?], Error>] = await withTaskGroup(of: (Int, Result<[String?], Error>).self) { group in
+            for (n, b) in batches.enumerated() {
+                let lines = b.map { texts[$0] }
+                group.addTask {
+                    do { return (n, .success(try await DeepSeek.correct(cfg, lines: lines, context: context))) }
+                    catch { return (n, .failure(error)) }
+                }
+            }
+            var all: [Int: Result<[String?], Error>] = [:]
+            for await (n, r) in group { all[n] = r }
+            return all
+        }
+
         var out = src
         var changed = 0
         var rejected = 0
-        for (k, i) in idx.enumerated() where !locked.contains(i) {
-            guard let text = resp.lines[k] else { continue }
-            if let fixed = TranscriptAligner.apply(src[i], refined: text) {
-                if fixed.tokens != src[i].tokens { changed += 1 }
-                out[i] = fixed
-            } else {
-                rejected += 1
+        var failed = 0
+        var firstError: String?
+        for (n, b) in batches.enumerated() {
+            guard case let .success(lines)? = results[n] else {
+                failed += 1
+                if firstError == nil, case let .failure(e)? = results[n] { firstError = e.localizedDescription }
+                continue
+            }
+            for (k, i) in b.enumerated() {
+                guard let text = lines[k] else { continue }
+                if let fixed = TranscriptAligner.apply(src[i], refined: text) {
+                    if fixed.tokens != src[i].tokens { changed += 1 }
+                    out[i] = fixed
+                } else {
+                    rejected += 1
+                }
             }
         }
-        return (out, resp.summary, resp.keywords, changed, rejected)
+
+        var notes: [String] = []
+        let sent = batches.reduce(0) { $0 + $1.count }
+        if batches.isEmpty {
+            notes.append("文字优化：句子都已按提词稿校对，只生成概要")
+        } else if failed == batches.count {
+            notes.append("文字优化失败，已用\(locked.isEmpty ? "原识别" : "提词稿校对")结果：\(firstError ?? "")")
+        } else {
+            var line = "文字优化：校对 \(sent) 句"
+            if batches.count > 1 { line += "（分 \(batches.count) 批）" }
+            line += "，改了 \(changed) 句"
+            if rejected > 0 { line += "，\(rejected) 句改动太大已保留原文" }
+            if failed > 0 { line += "，\(failed) 批失败已保留原文：\(firstError ?? "")" }
+            notes.append(line)
+        }
+        var summary = ""
+        var keywords: [String] = []
+        switch await summaryTask {
+        case let .success(s): summary = s.summary; keywords = s.keywords
+        case let .failure(e): notes.append("概要生成失败：\(e.localizedDescription)")
+        }
+        return (out, summary, keywords, notes)
+    }
+
+    private static func summarizeResult(_ cfg: LlmConfig, text: String) async -> Result<SummaryResponse, Error> {
+        do {
+            return .success(try await DeepSeek.summarize(cfg, text: text))
+        } catch {
+            return .failure(error)
+        }
     }
 
     private static func saveToPhotos(_ url: URL) async throws {

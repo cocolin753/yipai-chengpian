@@ -68,6 +68,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         store.subTitle = text
     }
 
+    var fillLightWarm by mutableStateOf(store.fillLightWarm)
+        private set
+
+    fun toggleFillLightWarm() {
+        fillLightWarm = !fillLightWarm
+        store.fillLightWarm = fillLightWarm
+    }
+
     fun cycleFillLight() {
         fillLight = fillLight.next()
         store.fillLight = fillLight

@@ -11,6 +11,7 @@ import com.yipai.app.asr.SpeechRecognizer
 import com.yipai.app.core.CutPlanner
 import com.yipai.app.core.EditPlan
 import com.yipai.app.core.EditSettings
+import com.yipai.app.core.LlmPlanner
 import com.yipai.app.core.ScriptAligner
 import com.yipai.app.core.TranscriptAligner
 import com.yipai.app.core.Utterance
@@ -19,6 +20,9 @@ import com.yipai.app.llm.LlmConfig
 import com.yipai.app.render.TitleSpec
 import com.yipai.app.render.VideoRenderer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
@@ -75,15 +79,11 @@ class Pipeline(private val context: Context) {
         }
         if (llm.enabled && rawUtterances.isNotEmpty()) {
             onProgress("优化文字", 0.46f)
-            try {
-                val r = refine(llm, utterances, locked)
-                utterances = r.utterances
-                summary = r.summary
-                keywords = r.keywords
-                notes += "文字优化：改了 ${r.changed} 句" + if (r.rejected > 0) "，${r.rejected} 句改动太大已保留原文" else ""
-            } catch (e: Exception) {
-                notes += "文字优化失败，已用${if (locked.isEmpty()) "原识别" else "提词稿校对"}结果：${e.message}"
-            }
+            val r = refine(llm, utterances, locked)
+            utterances = r.utterances
+            summary = r.summary
+            keywords = r.keywords
+            notes += r.notes
         }
         val note = notes.joinToString("\n")
 
@@ -103,26 +103,57 @@ class Pipeline(private val context: Context) {
         }
     }
 
-    private class Refined(val utterances: List<Utterance>, val summary: String, val keywords: List<String>, val changed: Int, val rejected: Int)
+    private class Refined(val utterances: List<Utterance>, val summary: String, val keywords: List<String>, val notes: List<String>)
 
-    /** 请大模型纠错：每句单独对齐，增删字太多的那句保留原文；[locked] 里的句子只用作上下文，不改 */
-    private fun refine(cfg: LlmConfig, src: List<Utterance>, locked: Set<Int>): Refined {
-        val idx = src.indices.filter { src[it].tokens.isNotEmpty() }
-        val resp = DeepSeek.refine(cfg, idx.map { TranscriptAligner.lineText(src[it]) })
+    /**
+     * 请大模型纠错并生成概要：
+     * - 对上提词稿的句子（[locked]）不发去纠错；全对上时只生成概要
+     * - 其余句子每批不超过 1000 字，分批并发；全文作为上下文
+     * - 每句单独对齐，增删字太多的那句保留原文；某批失败只影响那一批
+     */
+    private suspend fun refine(cfg: LlmConfig, src: List<Utterance>, locked: Set<Int>): Refined = coroutineScope {
+        val texts = src.map { if (it.tokens.isEmpty()) "" else TranscriptAligner.lineText(it) }
+        val full = texts.filter { it.isNotEmpty() }.joinToString("\n")
+        val batches = LlmPlanner.batches(texts, locked)
+        val context = if (batches.size > 1 || locked.isNotEmpty()) full else null
+
+        val summaryJob = async(Dispatchers.IO) { runCatching { DeepSeek.summarize(cfg, full) } }
+        val batchJobs = batches.map { b ->
+            async(Dispatchers.IO) { runCatching { DeepSeek.correct(cfg, b.map { texts[it] }, context) } }
+        }
+
         val out = src.toMutableList()
         var changed = 0
         var rejected = 0
-        idx.forEachIndexed { k, i ->
-            if (i in locked) return@forEachIndexed
-            val text = resp.lines[k] ?: return@forEachIndexed
-            val fixed = TranscriptAligner.apply(src[i], text)
-            if (fixed == null) rejected++
-            else {
-                if (fixed != src[i]) changed++
-                out[i] = fixed
+        var failed = 0
+        var error: String? = null
+        batches.zip(batchJobs.awaitAll()).forEach { (b, res) ->
+            val lines = res.getOrElse { failed++; error = error ?: it.message; return@forEach }
+            b.forEachIndexed { k, i ->
+                val text = lines[k] ?: return@forEachIndexed
+                val fixed = TranscriptAligner.apply(src[i], text)
+                if (fixed == null) rejected++
+                else {
+                    if (fixed != src[i]) changed++
+                    out[i] = fixed
+                }
             }
         }
-        return Refined(out, resp.summary, resp.keywords, changed, rejected)
+
+        val notes = mutableListOf<String>()
+        val sent = batches.sumOf { it.size }
+        notes += when {
+            batches.isEmpty() -> "文字优化：句子都已按提词稿校对，只生成概要"
+            failed == batches.size -> "文字优化失败，已用${if (locked.isEmpty()) "原识别" else "提词稿校对"}结果：$error"
+            else -> "文字优化：校对 $sent 句" + (if (batches.size > 1) "（分 ${batches.size} 批）" else "") +
+                "，改了 $changed 句" +
+                (if (rejected > 0) "，$rejected 句改动太大已保留原文" else "") +
+                (if (failed > 0) "，$failed 批失败已保留原文：$error" else "")
+        }
+        val sum = summaryJob.await()
+        sum.exceptionOrNull()?.let { notes += "概要生成失败：${it.message}" }
+        val s = sum.getOrNull()
+        Refined(out, s?.summary.orEmpty(), s?.keywords.orEmpty(), notes)
     }
 
     private data class VideoInfo(val duration: Double, val width: Int, val height: Int)

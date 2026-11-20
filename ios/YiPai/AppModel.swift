@@ -36,6 +36,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var titleImageVersion = 0
     @Published var settings: EditSettings { didSet { saveSettings() } }
     @Published var toast: String?
+    /// 前置屏幕补光用暖光（约 4000K），否则用白光
+    @Published var fillLightWarm: Bool { didSet { defaults.set(fillLightWarm, forKey: "fillLightWarm") } }
     @Published var fillLight: FillLight { didSet { defaults.set(fillLight.rawValue, forKey: "fillLight") } }
 
     private let defaults = UserDefaults.standard
@@ -49,6 +51,7 @@ final class AppModel: ObservableObject {
         let defaults = UserDefaults.standard
         titleText = defaults.string(forKey: "title") ?? ""
         subTitleText = defaults.string(forKey: "subTitle") ?? ""
+        fillLightWarm = defaults.object(forKey: "fillLightWarm") as? Bool ?? true
         fillLight = FillLight(rawValue: defaults.string(forKey: "fillLight") ?? "") ?? .auto
         if let data = defaults.data(forKey: "llm"), let c = try? JSONDecoder().decode(LlmConfig.self, from: data) {
             llm = c

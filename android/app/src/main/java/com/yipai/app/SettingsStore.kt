@@ -40,6 +40,11 @@ class SettingsStore(private val context: Context) {
         get() = prefs.getString("subTitle", "") ?: ""
         set(v) = prefs.edit().putString("subTitle", v).apply()
 
+    /** 前置屏幕补光用暖光（约 4000K），否则用白光 */
+    var fillLightWarm: Boolean
+        get() = prefs.getBoolean("fillLightWarm", true)
+        set(v) = prefs.edit().putBoolean("fillLightWarm", v).apply()
+
     var fillLight: FillLight
         get() = runCatching { FillLight.valueOf(prefs.getString("fillLight", null) ?: "") }.getOrDefault(FillLight.AUTO)
         set(v) = prefs.edit().putString("fillLight", v.name).apply()

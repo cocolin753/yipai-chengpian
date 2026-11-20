@@ -24,8 +24,11 @@ import androidx.compose.ui.unit.dp
 /** 环境光低于这个值（lux）算偏暗，自动模式录制时补光。普通客厅晚上开灯约 50~150 lux */
 const val DARK_LUX = 30f
 
-/** 屏幕补光用的暖白色 */
-val FillLightColor = Color(0xFFFFF4E0)
+/** 屏幕补光颜色：暖光约 4000K（肤色更柔和），白光最亮 */
+fun fillLightColor(warm: Boolean) = if (warm) Color(0xFFFFD1A3) else Color.White
+
+/** 屏幕补光光带宽度 */
+val FillLightRingWidth = 40.dp
 
 /** 环境光（lux），手机正面的光线传感器；没有传感器或还没读到时为 NaN */
 @Composable
@@ -69,10 +72,10 @@ fun applyFillLight(camera: Camera, torch: Boolean, lowLightBoost: Boolean) {
     }
 }
 
-/** 前置屏幕补光：取景框四周一圈暖白光带（只在屏幕上，不会录进视频） */
+/** 前置屏幕补光：取景框四周一圈光带（只在屏幕上，不会录进视频） */
 @Composable
-fun ScreenFillLightRing(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize().border(22.dp, FillLightColor))
+fun ScreenFillLightRing(color: Color, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxSize().border(FillLightRingWidth, color))
 }
 
 /** [enabled] 时把屏幕亮度调到最高，离开时恢复 */

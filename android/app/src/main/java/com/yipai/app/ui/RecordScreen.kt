@@ -152,12 +152,13 @@ fun RecordScreen(vm: AppViewModel) {
         FillLight.AUTO -> isRecording && autoLightForTake
     }
     val screenLight = lightActive && useFront
+    val lightColor = fillLightColor(vm.fillLightWarm)
     LaunchedEffect(camera, lightActive, useFront, vm.fillLight) {
         camera?.let { applyFillLight(it, torch = lightActive && !useFront, lowLightBoost = vm.fillLight != FillLight.OFF) }
     }
     MaxScreenBrightness(screenLight)
 
-    Box(Modifier.fillMaxSize().background(if (screenLight) FillLightColor else Color.Black)) {
+    Box(Modifier.fillMaxSize().background(if (screenLight) lightColor else Color.Black)) {
         // 9:16 取景框，与成品画面一致；标题位置也按成品比例摆放
         BoxWithConstraints(
             Modifier
@@ -167,18 +168,19 @@ fun RecordScreen(vm: AppViewModel) {
                 .aspectRatio(9f / 16f),
         ) {
             AndroidView({ previewView }, Modifier.fillMaxSize())
-            if (screenLight) ScreenFillLightRing()
-            if (!isRecording && vm.fillLight == FillLight.AUTO && isDark) {
-                Text(
-                    "环境偏暗，录制时自动补光",
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 12.dp)
-                        .background(Color(0x99000000), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                )
+            if (screenLight) ScreenFillLightRing(lightColor)
+            if (!isRecording) {
+                Column(
+                    Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (vm.fillLight == FillLight.AUTO && isDark) HintChip("环境偏暗，录制时自动补光")
+                    // 前置屏幕补光的光色，点一下切换
+                    if (useFront && vm.fillLight != FillLight.OFF) {
+                        HintChip("屏幕补光：${if (vm.fillLightWarm) "暖光" else "白光"}（点击切换）", Modifier.clickable(onClick = vm::toggleFillLightWarm))
+                    }
+                }
             }
             val prompter = vm.prompter
             val showPrompter = isRecording && prompter.show && prompter.script.isNotBlank()
@@ -189,7 +191,8 @@ fun RecordScreen(vm: AppViewModel) {
                     onSpeedChange = { vm.updatePrompter(vm.prompter.copy(speed = it)) },
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(start = 10.dp, end = 10.dp, top = 44.dp)
+                        .padding(horizontal = if (screenLight) FillLightRingWidth + 4.dp else 10.dp)
+                        .padding(top = 44.dp)
                         .fillMaxWidth()
                         .fillMaxHeight(0.42f),
                 )
@@ -308,6 +311,18 @@ private fun OutlinedTitleText(text: String, size: TextUnit, fill: Brush) {
         )
         Text(text, maxLines = 1, softWrap = false, style = base.copy(brush = fill))
     }
+}
+
+@Composable
+private fun HintChip(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        color = Color.White,
+        fontSize = 13.sp,
+        modifier = modifier
+            .background(Color(0x99000000), RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    )
 }
 
 @Composable

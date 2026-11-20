@@ -69,24 +69,28 @@ struct RecordView: View {
                     CameraPreview(session: camera.session)
                     if camera.screenLight {
                         // 前置屏幕补光：四周一圈暖白光带，只在屏幕上，不录进视频
-                        Rectangle().strokeBorder(Self.fillLightColor, lineWidth: 22)
+                        Rectangle().strokeBorder(lightColor, lineWidth: Self.ringWidth)
                     }
-                    if !camera.isRecording && model.fillLight == .auto && camera.isDark {
-                        VStack {
+                    if !camera.isRecording {
+                        VStack(spacing: 6) {
                             Spacer()
-                            Text("环境偏暗，录制时自动补光")
-                                .font(.footnote)
-                                .padding(.horizontal, 8).padding(.vertical, 2)
-                                .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
-                                .padding(.bottom, 12)
+                            if model.fillLight == .auto && camera.isDark {
+                                hintChip("环境偏暗，录制时自动补光")
+                            }
+                            // 前置屏幕补光的光色，点一下切换
+                            if camera.position == .front && model.fillLight != .off {
+                                hintChip("屏幕补光：\(model.fillLightWarm ? "暖光" : "白光")（点击切换）")
+                                    .onTapGesture { model.fillLightWarm.toggle() }
+                            }
                         }
+                        .padding(.bottom, 12)
                     }
                     if camera.isRecording && model.prompter.show
                         && !model.prompter.script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         // 提词器放在画面上部，靠近镜头，眼神不容易偏；只显示在屏幕上，不录进视频
                         PrompterOverlay()
                             .frame(height: geo.size.height * 0.42)
-                            .padding(.horizontal, 10)
+                            .padding(.horizontal, camera.screenLight ? Self.ringWidth + 4 : 10)
                             .padding(.top, 44)
                     } else {
                         TitlePreview(canvasWidth: geo.size.width, imageMaxHeight: geo.size.height * CaptionLayout.titleMaxHeight)
@@ -112,7 +116,7 @@ struct RecordView: View {
             Spacer(minLength: 0)
             controls
         }
-        .background((camera.screenLight ? Self.fillLightColor : Color.black).ignoresSafeArea())
+        .background((camera.screenLight ? lightColor : Color.black).ignoresSafeArea())
         .overlay {
             if denied {
                 VStack(spacing: 12) {
@@ -207,7 +211,20 @@ struct RecordView: View {
         return String(format: "%02d:%02d / %02d:00", s / 60, s % 60, Int(CameraController.maxDuration) / 60)
     }
 
-    private static let fillLightColor = Color(red: 1, green: 0.957, blue: 0.878)
+    /// 屏幕补光颜色：暖光约 4000K（肤色更柔和），白光最亮
+    private var lightColor: Color {
+        model.fillLightWarm ? Color(red: 1, green: 0.82, blue: 0.64) : .white
+    }
+
+    private static let ringWidth: CGFloat = 40
+
+    private func hintChip(_ text: String) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundColor(.white)
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+    }
 }
 
 struct TitlePreview: View {
