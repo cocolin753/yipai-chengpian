@@ -18,6 +18,13 @@ data class PrompterSettings(
     val fontSize: Float = 26f,
 )
 
+/** 拍摄补光：自动（录制开始时环境偏暗才开）/ 常开 / 关 */
+enum class FillLight(val label: String) {
+    AUTO("自动"), ON("开"), OFF("关");
+
+    fun next(): FillLight = entries[(ordinal + 1) % entries.size]
+}
+
 /** 设置与标题的本地保存 */
 class SettingsStore(private val context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -32,6 +39,10 @@ class SettingsStore(private val context: Context) {
     var subTitle: String
         get() = prefs.getString("subTitle", "") ?: ""
         set(v) = prefs.edit().putString("subTitle", v).apply()
+
+    var fillLight: FillLight
+        get() = runCatching { FillLight.valueOf(prefs.getString("fillLight", null) ?: "") }.getOrDefault(FillLight.AUTO)
+        set(v) = prefs.edit().putString("fillLight", v.name).apply()
 
     fun loadPrompter(): PrompterSettings {
         val d = PrompterSettings()

@@ -46,7 +46,7 @@ object DeepSeek {
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 15_000
-            conn.readTimeout = 120_000
+            conn.readTimeout = 300_000 // 20 分钟视频的字幕较长，生成要更久
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
             conn.setRequestProperty("Authorization", "Bearer ${cfg.apiKey.trim()}")

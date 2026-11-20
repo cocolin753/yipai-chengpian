@@ -47,7 +47,7 @@ enum DeepSeek {
         while base.hasSuffix("/") { base.removeLast() }
         guard let url = URL(string: base + "/chat/completions") else { throw PipelineError("接口地址不正确") }
 
-        var req = URLRequest(url: url, timeoutInterval: 120)
+        var req = URLRequest(url: url, timeoutInterval: 300) // 20 分钟视频的字幕较长，生成要更久
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer " + cfg.apiKey.trimmingCharacters(in: .whitespaces), forHTTPHeaderField: "Authorization")

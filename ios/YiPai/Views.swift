@@ -67,6 +67,20 @@ struct RecordView: View {
             GeometryReader { geo in
                 ZStack(alignment: .top) {
                     CameraPreview(session: camera.session)
+                    if camera.screenLight {
+                        // 前置屏幕补光：四周一圈暖白光带，只在屏幕上，不录进视频
+                        Rectangle().strokeBorder(Self.fillLightColor, lineWidth: 22)
+                    }
+                    if !camera.isRecording && model.fillLight == .auto && camera.isDark {
+                        VStack {
+                            Spacer()
+                            Text("环境偏暗，录制时自动补光")
+                                .font(.footnote)
+                                .padding(.horizontal, 8).padding(.vertical, 2)
+                                .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                                .padding(.bottom, 12)
+                        }
+                    }
                     if camera.isRecording && model.prompter.show
                         && !model.prompter.script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         // 提词器放在画面上部，靠近镜头，眼神不容易偏；只显示在屏幕上，不录进视频
@@ -98,7 +112,7 @@ struct RecordView: View {
             Spacer(minLength: 0)
             controls
         }
-        .background(Color.black.ignoresSafeArea())
+        .background((camera.screenLight ? Self.fillLightColor : Color.black).ignoresSafeArea())
         .overlay {
             if denied {
                 VStack(spacing: 12) {
@@ -124,9 +138,11 @@ struct RecordView: View {
                     model.process(url)
                 }
             }
+            camera.fillLight = model.fillLight
             if !denied { camera.start() }
         }
         .onDisappear { camera.stopSession() }
+        .onChange(of: model.fillLight) { camera.fillLight = $0 }
         .onChange(of: photoItem) { item in
             guard let item else { return }
             Task {
@@ -177,6 +193,9 @@ struct RecordView: View {
                 Button("翻转") { camera.switchCamera() }
                     .frame(maxWidth: .infinity)
                     .disabled(camera.isRecording)
+                Button("补光\(model.fillLight.label)") { model.fillLight = model.fillLight.next }
+                    .frame(maxWidth: .infinity)
+                    .disabled(camera.isRecording)
             }
         }
         .padding(16)
@@ -185,8 +204,10 @@ struct RecordView: View {
 
     private func timeText(_ t: Double) -> String {
         let s = Int(t)
-        return String(format: "%02d:%02d / 10:00", s / 60, s % 60)
+        return String(format: "%02d:%02d / %02d:00", s / 60, s % 60, Int(CameraController.maxDuration) / 60)
     }
+
+    private static let fillLightColor = Color(red: 1, green: 0.957, blue: 0.878)
 }
 
 struct TitlePreview: View {

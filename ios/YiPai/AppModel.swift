@@ -36,6 +36,7 @@ final class AppModel: ObservableObject {
     @Published private(set) var titleImageVersion = 0
     @Published var settings: EditSettings { didSet { saveSettings() } }
     @Published var toast: String?
+    @Published var fillLight: FillLight { didSet { defaults.set(fillLight.rawValue, forKey: "fillLight") } }
 
     private let defaults = UserDefaults.standard
 
@@ -48,6 +49,7 @@ final class AppModel: ObservableObject {
         let defaults = UserDefaults.standard
         titleText = defaults.string(forKey: "title") ?? ""
         subTitleText = defaults.string(forKey: "subTitle") ?? ""
+        fillLight = FillLight(rawValue: defaults.string(forKey: "fillLight") ?? "") ?? .auto
         if let data = defaults.data(forKey: "llm"), let c = try? JSONDecoder().decode(LlmConfig.self, from: data) {
             llm = c
         } else {

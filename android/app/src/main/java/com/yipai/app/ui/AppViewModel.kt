@@ -45,6 +45,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var prompter by mutableStateOf(store.loadPrompter())
         private set
+    var fillLight by mutableStateOf(store.fillLight)
+        private set
     var useTitleImage by mutableStateOf(store.useTitleImage)
         private set
     /** 每次换图片 +1，让预览重新加载 */
@@ -64,6 +66,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun updateSubTitle(text: String) {
         subTitleText = text
         store.subTitle = text
+    }
+
+    fun cycleFillLight() {
+        fillLight = fillLight.next()
+        store.fillLight = fillLight
     }
 
     fun updatePrompter(p: PrompterSettings) {

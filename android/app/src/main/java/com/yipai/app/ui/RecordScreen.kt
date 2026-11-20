@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -75,9 +76,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.yipai.app.FillLight
 import com.yipai.app.render.CaptionPainter
 
-private const val MAX_DURATION_MS = 10 * 60 * 1000L
+private const val MAX_DURATION_MS = 20 * 60 * 1000L
 
 @SuppressLint("MissingPermission") // 进入本页面前已申请相机和录音权限
 @Composable
@@ -87,6 +89,11 @@ fun RecordScreen(vm: AppViewModel) {
     var useFront by remember { mutableStateOf(false) }
     var recording by remember { mutableStateOf<Recording?>(null) }
     var elapsedMs by remember { mutableLongStateOf(0L) }
+    var camera by remember { mutableStateOf<Camera?>(null) }
+    val lux by rememberAmbientLux()
+    val isDark = !lux.isNaN() && lux < DARK_LUX
+    // 自动模式只在按下录制时判断一次，录制中不开关，免得成片忽明忽暗
+    var autoLightForTake by remember { mutableStateOf(false) }
 
     val previewView = remember {
         PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_CENTER }
@@ -105,7 +112,7 @@ fun RecordScreen(vm: AppViewModel) {
         val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
         val selector = if (useFront) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
         provider.unbindAll()
-        provider.bindToLifecycle(lifecycleOwner, selector, preview, videoCapture)
+        camera = provider.bindToLifecycle(lifecycleOwner, selector, preview, videoCapture)
     }
     DisposableEffect(Unit) {
         onDispose { recording?.stop() }
@@ -116,6 +123,7 @@ fun RecordScreen(vm: AppViewModel) {
     }
 
     fun startRecording() {
+        autoLightForTake = isDark
         val file = vm.newRecordingFile()
         elapsedMs = 0
         recording = recorder
@@ -138,8 +146,18 @@ fun RecordScreen(vm: AppViewModel) {
     }
 
     val isRecording = recording != null
+    val lightActive = when (vm.fillLight) {
+        FillLight.ON -> true
+        FillLight.OFF -> false
+        FillLight.AUTO -> isRecording && autoLightForTake
+    }
+    val screenLight = lightActive && useFront
+    LaunchedEffect(camera, lightActive, useFront, vm.fillLight) {
+        camera?.let { applyFillLight(it, torch = lightActive && !useFront, lowLightBoost = vm.fillLight != FillLight.OFF) }
+    }
+    MaxScreenBrightness(screenLight)
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize().background(if (screenLight) FillLightColor else Color.Black)) {
         // 9:16 取景框，与成品画面一致；标题位置也按成品比例摆放
         BoxWithConstraints(
             Modifier
@@ -149,6 +167,19 @@ fun RecordScreen(vm: AppViewModel) {
                 .aspectRatio(9f / 16f),
         ) {
             AndroidView({ previewView }, Modifier.fillMaxSize())
+            if (screenLight) ScreenFillLightRing()
+            if (!isRecording && vm.fillLight == FillLight.AUTO && isDark) {
+                Text(
+                    "环境偏暗，录制时自动补光",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp)
+                        .background(Color(0x99000000), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            }
             val prompter = vm.prompter
             val showPrompter = isRecording && prompter.show && prompter.script.isNotBlank()
             if (showPrompter) {
@@ -235,6 +266,7 @@ fun RecordScreen(vm: AppViewModel) {
                     if (isRecording) recording?.stop() else startRecording()
                 }
                 TextButton(onClick = { useFront = !useFront }, enabled = !isRecording) { Text("翻转") }
+                TextButton(onClick = vm::cycleFillLight, enabled = !isRecording) { Text("补光${vm.fillLight.label}") }
             }
         }
     }
@@ -298,5 +330,5 @@ private fun RecordButton(isRecording: Boolean, onClick: () -> Unit) {
 
 private fun formatTime(ms: Long): String {
     val s = ms / 1000
-    return "%02d:%02d / 10:00".format(s / 60, s % 60)
+    return "%02d:%02d / %02d:00".format(s / 60, s % 60, MAX_DURATION_MS / 60_000)
 }
